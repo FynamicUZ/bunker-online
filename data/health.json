@@ -1,0 +1,22 @@
+[
+  { "name": "To'liq sog'lom", "description": "Hech qanday surunkali kasallik yo'q. Jismonan va ruhiy jihatdan baquvvat." },
+  { "name": "Diabet (2-tur)", "description": "Insulinni nazorat qilish zarur. Maxsus ovqatlanish rejimiga muhtoj." },
+  { "name": "Ko'r", "description": "To'liq ko'rlik yoki juda past ko'ruvchanlik. Boshqalarga ko'proq tayanadi." },
+  { "name": "Kar", "description": "Eshitish qobiliyati yo'q yoki juda past. Imlo tili yoki yozma muloqotga muhtoj." },
+  { "name": "Allergiya (og'ir)", "description": "Ko'plab oziq-ovqat va moddalarga og'ir allergik reaksiya. Epipen zarur." },
+  { "name": "Astma", "description": "Nafas yo'llari kasalligi. Stress yoki chang muhitida inhalyator kerak bo'ladi." },
+  { "name": "Yurak kasalligi", "description": "Surunkali yurak aritmiyasi. Og'ir jismoniy faoliyat cheklangan." },
+  { "name": "Suyak sinishi (tuzalayotgan)", "description": "Oyog'ida tuzalib kelayotgan suyak sinishi. Harakatchanligi cheklangan." },
+  { "name": "Immunodefitsit", "description": "Imunitet tizimi juda zaif. Infektsiyalarga karshi himoya past." },
+  { "name": "Psixik buzilish", "description": "Klinik depressiya yoki tashvish buzilishi. Dori-darmon va qo'llab-quvvatlash zarur." },
+  { "name": "Homilador (5 oy)", "description": "Homiladorlikning o'rta bosqichida. Og'ir jismoniy mehnat cheklangan, tug'ruq yaqinlashmoqda." },
+  { "name": "Sog'lom (sportchi)", "description": "Muntazam sport bilan shug'ullanadi. Jismoniy chidamlilik va kuch yuqori darajada." },
+  { "name": "Tish kasalligi", "description": "Og'ir tish og'rig'i va infektsiyasi. Doimiy og'riq boshqaruviga muhtoj." },
+  { "name": "Jihongilik kasalligi", "description": "Uzoq masofali safarlar paytida olingan ekzotik kasallik. Vaqti-vaqti bilan qaytalanadi." },
+  { "name": "Alkogolik (tuzalgan)", "description": "Spirtli ichimliklarga qaramlikdan tuzalish jarayonida. Stress ostida recidiv xavfi bor." },
+  { "name": "Yuqori qon bosimi", "description": "Surunkali gipertenziya. Stress va zo'riqishda kriz xavfi mavjud." },
+  { "name": "Temir kamqonligi", "description": "Qon tarkibida temir yetarli emas. Charchoq va zaiflik kuzatiladi." },
+  { "name": "Radiatsiya ta'sirida bo'lgan", "description": "Oldin kichik radiatsion nurlanishga duchor bo'lgan. Uzoq muddatli asoratlari noaniq." },
+  { "name": "Sog'lom (natijajon)", "description": "Sog'lom, lekin jismoniy faoliyatdan uzoq. Og'ir mehnatga chidamsiz." },
+  { "name": "Ko'p qirrali shifobaxsh bilim", "description": "Xalq tabobatini yaxshi biladi. Dori vositalari tugagan holatda foydali muqobil taklif qila oladi." }
+]

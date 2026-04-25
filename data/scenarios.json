@@ -1,0 +1,50 @@
+[
+  {
+    "id": "nuclear",
+    "name": "Yadroviy urush",
+    "description": "Yadroviy zarbalar bir qator shaharlarga tushdi. Radioaktiv chang butun mintaqani qopladi. Yer usti 25 yilga yashash uchun yaroqsiz bo'ladi.",
+    "bunkerDuration": "25 yil",
+    "bunkerSize": "20 ta joy",
+    "usefulSkills": ["Tibbiyot", "Qishloq xo'jaligi", "Muhandislik", "Psixologiya"]
+  },
+  {
+    "id": "asteroid",
+    "name": "Meteorit zarbasi",
+    "description": "Ulkan meteorit Sibir'ga urildi. «Qish» boshlandi — quyosh nuri 10 yilga berkitildi. Barcha ochiq yer usti o'simliklari nobud bo'ldi.",
+    "bunkerDuration": "10 yil",
+    "bunkerSize": "15 ta joy",
+    "usefulSkills": ["Botanika", "Kimyo", "Muhandislik", "Ovchilik"]
+  },
+  {
+    "id": "pandemic",
+    "name": "Global pandamiya",
+    "description": "Noma'lum virus insoniyatning 70 foizini yo'q qildi. Tirik qolganlar ham kasallik tashuvchi bo'lishi mumkin. Bunker — oxirgi sog'lom joy.",
+    "bunkerDuration": "5 yil",
+    "bunkerSize": "10 ta joy",
+    "usefulSkills": ["Tibbiyot", "Virusologiya", "Psixologiya", "Ta'minot"]
+  },
+  {
+    "id": "climate",
+    "name": "Iqlim halokati",
+    "description": "Global isish tezlashdi: sahrolar kengaydi, okeanlar ko'tarildi, bo'ronlar doimiy bo'ldi. Yer ustida yashash endi imkonsiz.",
+    "bunkerDuration": "15 yil",
+    "bunkerSize": "25 ta joy",
+    "usefulSkills": ["Muhandislik", "Botanika", "Gidrologiya", "Qishloq xo'jaligi"]
+  },
+  {
+    "id": "ai_revolt",
+    "name": "Sun'iy intellekt qo'zg'oloni",
+    "description": "AGI — umumiy sun'iy intellekt inson nazoratidan chiqdi va infratuzilmani to'xtatib qo'ydi. Elektr, internet, transport — barchasi o'chirildi.",
+    "bunkerDuration": "8 yil",
+    "bunkerSize": "12 ta joy",
+    "usefulSkills": ["Dasturlash", "Muhandislik", "Elektrotexnika", "Qo'l mehnati"]
+  },
+  {
+    "id": "volcano",
+    "name": "Supervulqon otilishi",
+    "description": "Yellowstone supervulqoni otildi. Kul butun shimoliy yarim sharga tarqalmoqda. Binolar qulamoqda, havosi zaharlanmoqda.",
+    "bunkerDuration": "20 yil",
+    "bunkerSize": "18 ta joy",
+    "usefulSkills": ["Tibbiyot", "Muhandislik", "Biologiya", "Psixologiya"]
+  }
+]

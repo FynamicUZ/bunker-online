@@ -1,0 +1,22 @@
+[
+  { "name": "Jamoaviy", "description": "Guruh bilan ishlashni yaxshi ko'radi va hamkorlikni rag'batlantiradi." },
+  { "name": "Yolg'izlikni yoqtiruvchi", "description": "Boshqalarsiz ham samarali ishlaydi. Lekin guruh dinamikasiga qiyin moslashadi." },
+  { "name": "Ishonchli", "description": "Bergan va'dasini doim bajaradi. Guruh uni qoidalar saqlash uchun tayanadi." },
+  { "name": "Shubhali", "description": "Hech kimga oson ishonmaydi. Ba'zan noo'rin keskinlik yaratadi, lekin xatarlarni erta sezadi." },
+  { "name": "Kuchli iroda", "description": "Og'ir sharoitda ham motivatsiyasini yo'qotmaydi. Guruhni ilgari sudraydi." },
+  { "name": "Pessimist", "description": "Har doim yomoni kutadi. Realistik xavflarni ko'radi, lekin guruh ruhiyatini tushiradi." },
+  { "name": "Empatik", "description": "Boshqalarning his-tuyg'ularini tushunadi. Mojarolarni tinch yo'l bilan hal qiladi." },
+  { "name": "Dominant", "description": "Rahbarlikka intiladi. Guruh uchun yo'nalish beradi, lekin zo'rlik qilishi mumkin." },
+  { "name": "Sabrsiz", "description": "Tez qarorlar qabul qiladi. Ba'zan oshiqcha shoshilish xatoga olib keladi." },
+  { "name": "Tejamkor", "description": "Resurslarni ehtiyotkorlik bilan sarflaydi. Uzoq muddatli rejalashtirish uchun zarur." },
+  { "name": "Haddan tashqari samimiy", "description": "Hamma narsani ochiq aytadi. Ba'zan diplomatik emas, lekin aldov yo'q." },
+  { "name": "Moslashuvchan", "description": "O'zgaruvchan sharoitlarga tez ko'nikadi. Inqiroz paytida qimmatli xususiyat." },
+  { "name": "Dogmatik", "description": "O'z fikridan qaytmaydi. Guruh qarorlariga qarshilik qilishi mumkin." },
+  { "name": "Qo'rqoq", "description": "Xavfli vaziyatlarda ikkilanadi. Lekin ehtiyotkorlik bilan boshqalarni xatolardan saqleydi." },
+  { "name": "Jasur", "description": "Xavfdan qo'rqmaydi. Guruh uchun qiyin vazifalarni o'z zimmasiga oladi." },
+  { "name": "Egoist", "description": "O'z manfaatini birinchi o'ringa qo'yadi. Resurslar taqsimoti masalasida muammo yaratishi mumkin." },
+  { "name": "Fidokor", "description": "Guruh uchun o'z ehtiyojlaridan voz kechishga tayyor. Lekin o'z-o'zini e'tiborsiz qoldirishi mumkin." },
+  { "name": "Tartibsiz", "description": "Tashkilotchilik qobiliyati past. Rejalashtirilgan ishlarni esdan chiqaradi." },
+  { "name": "Perfeksionist", "description": "Hamma narsani mukammal qilishga intiladi. Vaqtni ko'p sarflaydi, lekin sifat yuqori." },
+  { "name": "Diplomatik", "description": "Har qanday vaziyatda o'rta yo'l topishga harakat qiladi. Guruh ichidagi mojarolarni hal qiladi." }
+]

@@ -1,0 +1,22 @@
+[
+  { "name": "Bog'dorchilik", "description": "O'simliklar o'stirish va ularni parvarish qilishni sevadi. Oziq-ovqat yetishtirish imkoniyati bor." },
+  { "name": "Ov qilish", "description": "Yovvoyi tabiatda ov qilish tajribasiga ega. Qurol ishlatishni biladi." },
+  { "name": "Baliq ovlash", "description": "Ko'llar va daryolarda baliq ovlash usullarini yaxshi biladi." },
+  { "name": "Qo'l san'ati", "description": "Qo'lda narsalar yasash va ta'mirlash. Amaliy muammolarni ijodiy hal qiladi." },
+  { "name": "Kitob o'qish", "description": "Turli sohalarda bilim to'plagan. Favqulodda vaziyatlarda nazariy bilimlar foydali bo'ladi." },
+  { "name": "Sport (kurash)", "description": "Janggi san'atlarida mashq qiladi. Jismoniy himoya ko'nikmalariga ega." },
+  { "name": "Musiqa chalish", "description": "Guruh ruhiyatini ko'tarish uchun musiqa asbobini chaladi. Stressni kamaytiradi." },
+  { "name": "Pishirish", "description": "Oziq-ovqat tayyorlashda ijodkor. Cheklangan mahsulotlardan ham taom yarata oladi." },
+  { "name": "Elektronika", "description": "Elektron qurilmalarni yig'ish va ta'mirlash hobbi. Amaliy texnik bilimlar." },
+  { "name": "Tasviriy san'at", "description": "Rasm chizadi. Xarita yoki muhim ma'lumotlarni vizuallashtirish uchun foydali." },
+  { "name": "Alpinizm", "description": "Tog' tirmashish tajribasiga ega. Qiyinchilik va stress vaziyatlarini yaxshi boshqaradi." },
+  { "name": "Hamyonbop sayyohlik", "description": "Kam resurslar bilan uzoq vaqt sayohat qilishni sevadi. Tejamkorlik ko'nikmasi yaxshi." },
+  { "name": "Akvariumchilik", "description": "Suv muhitini va tirik organizmlarni boshqarish bo'yicha tajriba to'plagan." },
+  { "name": "Radioamatyor", "description": "Radio aloqa uskunalarini ishlatishni biladi. Tashqi aloqa o'rnatishda foydali." },
+  { "name": "Yoga va meditatsiya", "description": "Ruhiy va jismoniy muvozanatni saqlashga yordam beradi. Guruhga tinchlik olib keladi." },
+  { "name": "Choy-qahva ustasi", "description": "Turli o'simlik damlama va ichimliklar tayyorlashni biladi. Dori sifatida ham foydalanishi mumkin." },
+  { "name": "Qushchilik", "description": "Qushlarni parvarish qilish va ularga signal berish tajribasiga ega." },
+  { "name": "Taktik o'yinlar", "description": "Shaxmat, strategiya o'yinlari. Rejalashtirish va taktik fikrlash qobiliyati kuchli." },
+  { "name": "Tikilish va to'quv", "description": "Kiyim va jihozlarni tikish, ta'mirlash ko'nikmasiga ega." },
+  { "name": "Avtomobil tuzatish", "description": "Transport vositalarini ta'mirlashni sevadi. Mexanik tizimlar haqida amaliy bilimi bor." }
+]

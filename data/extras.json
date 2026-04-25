@@ -1,0 +1,22 @@
+[
+  { "name": "Portativ dori-to'plam", "description": "Keng qamrovli tibbiy to'plam: jarohat bog'lash, og'riq qoldiruvchilar, antibiotiklar." },
+  { "name": "Harbiy qurol (litsenziyali)", "description": "Shaxsiy qorovul pistoleti va zaxira o'q. Himoya va ovda foydali." },
+  { "name": "Sirliq qo'lyozma", "description": "Noma'lum tildagi qo'lyozma. Bunker qurilishi yoki omon qolish haqida ma'lumot bo'lishi mumkin." },
+  { "name": "Portativ elektr generatori", "description": "Kichik benzinli generator. Cheklangan vaqt davomida elektr ta'minlaydi." },
+  { "name": "Kriptovalyuta hisobi", "description": "Yirik summada kriptovalyuta. Inqirozdan keyin qayta qurish uchun kapital bo'lishi mumkin." },
+  { "name": "Bitta uy hayvoni (it)", "description": "Sodiq va xavflarni erta sezuvchi ov iti. Qo'shimcha og'iz ham bor." },
+  { "name": "Giyohvand moddalar zaxirasi", "description": "Tibbiy maqsadlarda og'riq qoldiruvchi opiatlar. Zarur, lekin oshiqcha ishlatish xavfli." },
+  { "name": "O'yin-kulgi (karta o'yinlari)", "description": "Zerikarli tunlar uchun karta to'plami. Guruh ruhiyatini ko'taradi, lekin nizoga sabab bo'lishi mumkin." },
+  { "name": "Noutbuk (offline ma'lumotlar)", "description": "Internet aloqasiz ishlash uchun ombor va qurilish bo'yicha ma'lumotlar yuklab olingan." },
+  { "name": "Muqaddas kitob", "description": "Shaxsiy imon va ma'naviy qo'llab-quvvatlash. Guruhning ma'naviy birligi uchun foydali bo'lishi mumkin." },
+  { "name": "Zaxira ovqat (bir oylik)", "description": "Bir kishi uchun bir oylik konserva va quruq ovqat zahirasi." },
+  { "name": "O'sish gormoni inji'aksiyalari", "description": "Kasalxonadan o'g'irlangan tibbiy preparatlar. Jismoniy tiklanishni tezlashtiradi." },
+  { "name": "Harita (mahalliy hududlar)", "description": "Atrofdagi hududlarning batafsil qog'oz xaritasi. Navigatsiya uchun zarur." },
+  { "name": "Radio qabul qilgich", "description": "Tashqi signallarni ushlash uchun portativ radio. Axborot manbai vazifasini o'taydi." },
+  { "name": "Turli tillarda lugatlar to'plami", "description": "Beshta tilda lugatlar. Boshqa guruhlar bilan muloqotda yoki yashirin xabarlarda foydali." },
+  { "name": "Ilmiy laboratoriya jihozlari (kichik)", "description": "Suv sifati va ifloslangan moddalarni aniqlash uchun portativ test to'plami." },
+  { "name": "Bo'sh xotira (hech narsa yo'q)", "description": "Bu insonning hech qanday maxsus ashyosi yo'q. Ammo u bilan keladi." },
+  { "name": "Qimmatbaho zargarlik buyumlari", "description": "Oila merosidan qimmat taqinchoqlar. Savdo-sotiq yoki pora uchun ishlatish mumkin." },
+  { "name": "Kabutar (pochta)", "description": "Uy-xona o'rgatilgan pochta kabuti. Aloqa uzilganda ma'lumot yetkazish mumkin." },
+  { "name": "Sehrli kitob (magiya)", "description": "Qadimiy sehrgarlik amallari yozilgan kitob. Hech kimga amaliy foydasi yo'qdek ko'rinadi... yo'qmi?" }
+]

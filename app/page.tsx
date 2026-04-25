@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -22,6 +23,20 @@ import {
   type CreateRoomForm,
   type JoinRoomForm,
 } from "@/lib/validation";
+import { createClient } from "@/lib/supabase/client";
+import { createRoom, joinRoom } from "@/app/actions";
+
+async function ensureAnonymousAuth() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) throw new Error("Tizimga kirishda xatolik: " + error.message);
+  }
+}
 
 export default function HomePage() {
   return (
@@ -49,6 +64,7 @@ export default function HomePage() {
 }
 
 function CreateRoomCard() {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const form = useForm<CreateRoomForm>({
     resolver: zodResolver(createRoomFormSchema),
@@ -58,10 +74,19 @@ function CreateRoomCard() {
 
   const onSubmit = form.handleSubmit(async (values) => {
     setPending(true);
-    // TODO: Bosqich 2'da Supabase bilan xona yaratish
-    console.log("[create-room]", values);
-    toast.info("Xona yaratish Bosqich 2'da ulanadi");
-    setPending(false);
+    try {
+      await ensureAnonymousAuth();
+      const result = await createRoom(values.nickname);
+      if ("error" in result) {
+        toast.error(result.error);
+        setPending(false);
+      } else {
+        router.push(`/room/${result.code}`);
+      }
+    } catch {
+      toast.error("Xatolik yuz berdi. Qayta urinib ko'ring");
+      setPending(false);
+    }
   });
 
   const errorMessage = form.formState.errors.nickname?.message;
@@ -100,6 +125,7 @@ function CreateRoomCard() {
 }
 
 function JoinRoomCard() {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const form = useForm<JoinRoomForm>({
     resolver: zodResolver(joinRoomFormSchema),
@@ -109,10 +135,19 @@ function JoinRoomCard() {
 
   const onSubmit = form.handleSubmit(async (values) => {
     setPending(true);
-    // TODO: Bosqich 2'da Supabase bilan xonaga qo'shilish
-    console.log("[join-room]", values);
-    toast.info("Xonaga qo'shilish Bosqich 2'da ulanadi");
-    setPending(false);
+    try {
+      await ensureAnonymousAuth();
+      const result = await joinRoom(values.nickname, values.roomCode);
+      if ("error" in result) {
+        toast.error(result.error);
+        setPending(false);
+      } else {
+        router.push(`/room/${result.code}`);
+      }
+    } catch {
+      toast.error("Xatolik yuz berdi. Qayta urinib ko'ring");
+      setPending(false);
+    }
   });
 
   const nicknameError = form.formState.errors.nickname?.message;
