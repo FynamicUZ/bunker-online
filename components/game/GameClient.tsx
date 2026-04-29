@@ -1,28 +1,32 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import CharacterCard from "@/components/game/CharacterCard";
+import RoundTable from "@/components/game/RoundTable";
 import RevealDialog from "@/components/game/RevealDialog";
 import VotingPanel from "@/components/game/VotingPanel";
+import ChatPanel from "@/components/game/ChatPanel";
+import NotesPanel from "@/components/game/NotesPanel";
+import AbilityButton from "@/components/game/AbilityButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { revealField, advanceRound, setPhase } from "@/app/actions";
+import { MessageSquare, StickyNote, ChevronRight, SkipForward } from "lucide-react";
+import { revealField, advanceRound, setPhase, confirmStillHere, triggerAfkAdvance } from "@/app/actions";
+import TurnTimer from "@/components/game/TurnTimer";
+import AfkWarningDialog from "@/components/game/AfkWarningDialog";
 import type { Character, CharacterField } from "@/lib/game/types";
+import type { SeatPlayer } from "@/components/game/PlayerSeat";
 import scenariosData from "@/data/scenarios.json";
 
-type RevealableField = Exclude<CharacterField, "age" | "gender">;
-const REVEALABLE: RevealableField[] = ["profession", "health", "hobby", "trait", "extra"];
+const ALL_FIELDS: CharacterField[] = ["biology", "profession", "health", "hobby", "trait", "extra"];
 
 interface ScenarioData {
   id: string;
   name: string;
   description: string;
   bunkerDuration: string;
-  bunkerSize: string;
 }
 
 interface PlayerRow {
@@ -31,8 +35,12 @@ interface PlayerRow {
   user_id: string;
   is_host: boolean;
   is_alive: boolean;
+  is_bot?: boolean;
   character: Character | null;
   revealed_fields: CharacterField[];
+  reveal_order?: number | null;
+  special_ability_id?: string | null;
+  special_ability_used?: boolean;
 }
 
 interface RoomRow {
@@ -41,9 +49,12 @@ interface RoomRow {
   host_id: string;
   scenario_id: string | null;
   bunker_capacity: number;
-  max_players: number;
   current_round: number;
   current_phase: "reveal" | "discussion" | "voting" | null;
+  current_turn_index: number;
+  turn_started_at: string | null;
+  turn_warning_at: string | null;
+  turn_grace_at: string | null;
   status: string;
 }
 
@@ -63,6 +74,11 @@ export default function GameClient({ code }: Props) {
   const [revealing, setRevealing] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [settingPhase, setSettingPhase] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [recentlyEliminatedName, setRecentlyEliminatedName] = useState<string | null>(null);
+  const afkTriggeredRef = useRef(false);
+  const elimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -75,7 +91,7 @@ export default function GameClient({ code }: Props) {
 
       const { data: roomData, error: roomErr } = await supabase
         .from("rooms")
-        .select("id, code, host_id, scenario_id, bunker_capacity, max_players, current_round, current_phase, status")
+        .select("id, code, host_id, scenario_id, bunker_capacity, current_round, current_phase, current_turn_index, turn_started_at, turn_warning_at, turn_grace_at, status")
         .eq("code", code)
         .maybeSingle();
 
@@ -84,16 +100,14 @@ export default function GameClient({ code }: Props) {
 
       const { data: playersData } = await supabase
         .from("players")
-        .select("id, nickname, user_id, is_host, is_alive, character, revealed_fields")
+        .select("id, nickname, user_id, is_host, is_alive, character, revealed_fields, reveal_order, is_bot, special_ability_id, special_ability_used")
         .eq("room_id", roomData.id)
         .order("joined_at", { ascending: true });
 
       setPlayers((playersData ?? []) as PlayerRow[]);
 
       if (roomData.scenario_id) {
-        const found = (scenariosData as ScenarioData[]).find(
-          (s) => s.id === roomData.scenario_id
-        );
+        const found = (scenariosData as ScenarioData[]).find((s) => s.id === roomData.scenario_id);
         if (found) setScenario(found);
       }
 
@@ -115,42 +129,37 @@ export default function GameClient({ code }: Props) {
 
     const channel = supabase
       .channel(`game-room:${room.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "players",
-          filter: `room_id=eq.${room.id}`,
-        },
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "players", filter: `room_id=eq.${room.id}` },
         (payload) => {
-          setPlayers((prev) =>
-            prev.map((p) =>
-              p.id === (payload.new as PlayerRow).id ? (payload.new as PlayerRow) : p
-            )
-          );
+          const updated = payload.new as PlayerRow;
+          setPlayers((prev) => prev.map((p) => p.id === updated.id ? updated : p));
+
+          // Show eliminated name briefly
+          const prev = players.find((p) => p.id === updated.id);
+          if (prev?.is_alive && !updated.is_alive) {
+            setRecentlyEliminatedName(updated.nickname);
+            if (elimTimer.current) clearTimeout(elimTimer.current);
+            elimTimer.current = setTimeout(() => setRecentlyEliminatedName(null), 4000);
+          }
         }
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "rooms",
-          filter: `id=eq.${room.id}`,
-        },
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
         (payload) => {
           const updated = payload.new as RoomRow;
-          if (updated.status === "finished") {
-            router.push(`/room/${code}/results`);
-            return;
+          if (updated.status === "finished") { router.push(`/room/${code}/results`); return; }
+          if (updated.scenario_id && !scenario) {
+            const found = (scenariosData as ScenarioData[]).find((s) => s.id === updated.scenario_id);
+            if (found) setScenario(found);
           }
-          setRoom((prev) => (prev ? { ...prev, ...updated } : prev));
+          setRoom((prev) => prev ? { ...prev, ...updated } : prev);
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (elimTimer.current) clearTimeout(elimTimer.current);
+    };
   }, [room?.id, code, router]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived state ─────────────────────────────────────────────────────────
@@ -159,21 +168,77 @@ export default function GameClient({ code }: Props) {
   const currentRound = room?.current_round ?? 1;
   const isVoting = room?.current_phase === "voting";
   const hasRevealedThisRound = (me?.revealed_fields.length ?? 0) >= currentRound;
-  const hiddenFields = REVEALABLE.filter((f) => !(me?.revealed_fields ?? []).includes(f));
+  const hiddenFields = ALL_FIELDS.filter((f) => !(me?.revealed_fields ?? []).includes(f));
   const canReveal = me?.is_alive && !hasRevealedThisRound && hiddenFields.length > 0 && !isVoting;
+  const aliveCount = players.filter((p) => p.is_alive).length;
+
+  // Turn-order derived state
+  const alivePlayers = players.filter((p) => p.is_alive);
+  const turnIndex = room?.current_turn_index ?? 0;
+  const activeTurnPlayer = alivePlayers.find((p) => (p.reveal_order ?? 0) === turnIndex % Math.max(alivePlayers.length, 1)) ?? null;
+  const isMyTurn = activeTurnPlayer?.user_id === currentUserId && !isVoting;
+
+  // Derived: show AFK warning modal when server has set turn_warning_at for my turn
+  const showAfkWarning = Boolean(isMyTurn && room?.turn_warning_at && !room?.turn_grace_at);
+
+  // AFK: auto-trigger bot if grace period expired (20s after grace confirmed)
+  useEffect(() => {
+    if (!isMyTurn || !room?.turn_grace_at || !me) return;
+    const graceExpiry = new Date(room.turn_grace_at).getTime() + 20_000;
+    const delay = Math.max(0, graceExpiry - Date.now());
+    const t = setTimeout(() => {
+      if (!afkTriggeredRef.current) {
+        afkTriggeredRef.current = true;
+        triggerAfkAdvance(room.id, me.id);
+      }
+    }, delay);
+    return () => clearTimeout(t);
+  }, [isMyTurn, room?.turn_grace_at, me]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // AFK: 25s expire — set warning on server (host does this, or anyone whose timer expired)
+  useEffect(() => {
+    if (!isMyTurn || isVoting || !room?.turn_started_at || room?.turn_warning_at) return;
+    const expiry = new Date(room.turn_started_at).getTime() + 25_000;
+    const now = Date.now();
+    const delay = Math.max(0, expiry - now);
+    const t = setTimeout(async () => {
+      // Mark warning time on room
+      const supabase = (await import("@/lib/supabase/client")).createClient();
+      await supabase.from("rooms").update({ turn_warning_at: new Date().toISOString() }).eq("id", room.id);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [isMyTurn, isVoting, room?.turn_started_at, room?.turn_warning_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleReveal = useCallback(
-    async (field: RevealableField) => {
-      if (!me) return;
-      setRevealing(true);
-      setRevealOpen(false);
-      const { error } = await revealField(me.id, field);
-      if (error) toast.error(error);
-      setRevealing(false);
-    },
-    [me]
-  );
+  const handleReveal = useCallback(async (field: CharacterField) => {
+    if (!me) return;
+    setRevealing(true);
+    setRevealOpen(false);
+    const { error } = await revealField(me.id, field);
+    if (error) toast.error(error);
+    else {
+      // After reveal, advance turn index
+      if (room) {
+        const supabase = (await import("@/lib/supabase/client")).createClient();
+        await supabase
+          .from("rooms")
+          .update({
+            current_turn_index: (room.current_turn_index ?? 0) + 1,
+            turn_started_at: new Date().toISOString(),
+            turn_warning_at: null,
+            turn_grace_at: null,
+          })
+          .eq("id", room.id);
+      }
+    }
+    setRevealing(false);
+    afkTriggeredRef.current = false;
+  }, [me, room]);
+
+  const handleConfirmStillHere = useCallback(async () => {
+    if (!room) return;
+    await confirmStillHere(room.id);
+  }, [room]);
 
   const handleAdvanceRound = useCallback(async () => {
     if (!room) return;
@@ -219,17 +284,19 @@ export default function GameClient({ code }: Props) {
   if (!me.character) {
     return (
       <main className="flex flex-1 items-center justify-center">
-        <p className="text-muted-foreground animate-pulse text-sm">
-          Karakter tayinlanmoqda...
-        </p>
+        <p className="text-muted-foreground animate-pulse text-sm">Karakter tayinlanmoqda...</p>
       </main>
     );
   }
 
-  const otherPlayers = players.filter((p) => p.user_id !== currentUserId);
+  const seatPlayers: SeatPlayer[] = players.map((p) => ({
+    ...p,
+    is_bot: p.is_bot ?? false,
+    reveal_order: p.reveal_order ?? null,
+  }));
 
   return (
-    <>
+    <div className="game-root flex flex-1 flex-col min-h-0">
       <RevealDialog
         open={revealOpen}
         onOpenChange={setRevealOpen}
@@ -238,33 +305,54 @@ export default function GameClient({ code }: Props) {
         loading={revealing}
       />
 
-      <main className="flex flex-1 flex-col gap-6 px-4 py-8 max-w-2xl mx-auto w-full">
-        {/* Stsenariy banneri */}
-        {scenario && (
-          <div className="rounded-xl border p-4 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-sm">{scenario.name}</span>
-              <Badge variant="destructive" className="text-xs">Favqulodda holat</Badge>
-            </div>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              {scenario.description}
-            </p>
-            <div className="flex gap-4 text-xs text-muted-foreground pt-1">
-              <span>
-                Bunker muddati:{" "}
-                <strong className="text-foreground">{scenario.bunkerDuration}</strong>
-              </span>
-              <span>
-                Bunker joylari:{" "}
-                <strong className="text-foreground">{room.bunker_capacity}</strong>
-              </span>
-            </div>
+      <AfkWarningDialog
+        open={showAfkWarning}
+        warningStartedAt={room?.turn_warning_at ?? null}
+        onConfirm={handleConfirmStillHere}
+      />
+
+      {/* Top scenario banner */}
+      {scenario && (
+        <div className="flex items-center justify-between border-b border-border/40 bg-card/60 px-4 py-2 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <Badge variant="destructive" className="text-[10px] shrink-0">Favqulodda</Badge>
+            <span className="text-xs font-semibold truncate">{scenario.name}</span>
+            <span className="text-[11px] text-muted-foreground hidden sm:block">
+              {scenario.bunkerDuration} — {room.bunker_capacity} joy
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>{aliveCount} tirik</span>
+            <span className="text-border">·</span>
+            <span className="font-semibold text-foreground">Bosqich {currentRound}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main area: table */}
+      <div className="flex flex-1 flex-col items-center justify-start overflow-y-auto px-4 pt-6 pb-28">
+        <RoundTable
+          players={seatPlayers}
+          currentUserId={currentUserId ?? ""}
+          activeTurnPlayerId={activeTurnPlayer?.id ?? null}
+          recentlyEliminatedName={recentlyEliminatedName}
+        />
+
+        {/* Turn timer — show when it's my turn and not in voting */}
+        {isMyTurn && !isVoting && room?.turn_started_at && (
+          <div className="mt-4 flex flex-col items-center gap-1">
+            <TurnTimer
+              turnStartedAt={room.turn_started_at}
+              totalSeconds={25}
+              onExpire={() => {/* warning dialog handled via useEffect */}}
+              label="kartangizni oching"
+            />
           </div>
         )}
 
-        {/* Bosqich / Ovozlash paneli */}
-        {isVoting ? (
-          <div className="space-y-3">
+        {/* Voting panel — shown below table when voting */}
+        {isVoting && (
+          <div className="mt-6 w-full max-w-md space-y-2">
             <VotingPanel
               roomId={room.id}
               round={currentRound}
@@ -274,107 +362,92 @@ export default function GameClient({ code }: Props) {
               isHost={isHost}
             />
             {isHost && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full"
-                disabled={settingPhase}
-                onClick={handleCancelVoting}
-              >
+              <Button variant="ghost" size="sm" className="w-full" disabled={settingPhase} onClick={handleCancelVoting}>
                 Ovozlashni bekor qilish
               </Button>
             )}
           </div>
-        ) : (
-          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Bosqich</p>
-              <p className="text-2xl font-black leading-none">{currentRound}</p>
-            </div>
-            {isHost && (
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={settingPhase}
-                  onClick={handleStartVoting}
-                >
-                  {settingPhase ? "..." : "Ovozlash →"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={advancing}
-                  onClick={handleAdvanceRound}
-                >
-                  {advancing ? "..." : "Keyingi bosqich"}
-                </Button>
-              </div>
-            )}
-          </div>
         )}
+      </div>
 
-        {/* Sizning kartangiz */}
-        {!isVoting && (
-          <section className="space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Sizning kartangiz
-            </h2>
-            <CharacterCard
-              character={me.character}
-              revealedFields={me.revealed_fields ?? []}
-              isOwn
-              playerName={me.nickname}
-            />
-            {canReveal ? (
-              <Button
-                className="w-full"
-                onClick={() => setRevealOpen(true)}
-                disabled={revealing}
-              >
-                {revealing ? "Ochilmoqda..." : "Maydonimni ochish"}
+      {/* Bottom HUD */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between border-t border-border/40 bg-[oklch(0.12_0.006_60/90%)] px-4 py-2 backdrop-blur-md">
+        {/* Left: notes toggle */}
+        <button
+          onClick={() => setNotesOpen((o) => !o)}
+          className={[
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            notesOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          ].join(" ")}
+        >
+          <StickyNote className="h-4 w-4" />
+          Yozuvlar
+        </button>
+
+        {/* Center: action buttons */}
+        <div className="flex items-center gap-2">
+          {!isVoting && canReveal && isMyTurn && (
+            <Button size="sm" onClick={() => setRevealOpen(true)} disabled={revealing} className="gap-1.5 text-xs">
+              <ChevronRight className="h-3.5 w-3.5" />
+              {revealing ? "Ochilmoqda..." : "Kartani och"}
+            </Button>
+          )}
+          {!isVoting && isHost && (
+            <>
+              <Button size="sm" variant="destructive" disabled={settingPhase} onClick={handleStartVoting} className="text-xs">
+                Ovozlash →
               </Button>
-            ) : !me.is_alive ? (
-              <p className="text-center text-xs text-destructive">
-                Siz bunkersiz qoldingiz.
-              </p>
-            ) : hasRevealedThisRound ? (
-              <p className="text-center text-xs text-muted-foreground">
-                Bu bosqichda maydoningizni ochdingiz. Host keyingi bosqichni boshlaguncha kuting.
-              </p>
-            ) : (
-              <p className="text-center text-xs text-muted-foreground">
-                Barcha maydonlar ochiq.
-              </p>
-            )}
-          </section>
-        )}
+              <Button size="sm" variant="outline" disabled={advancing} onClick={handleAdvanceRound} className="text-xs gap-1">
+                <SkipForward className="h-3.5 w-3.5" />
+                Keyingi
+              </Button>
+            </>
+          )}
+          {!isVoting && me.is_alive && !isMyTurn && !isVoting && hiddenFields.length > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {activeTurnPlayer ? `${activeTurnPlayer.nickname} so'zlaydi...` : "Navbatingizni kuting..."}
+            </p>
+          )}
+          {!me.is_alive && (
+            <p className="text-[11px] text-destructive font-medium">Siz bunkersiz qoldingiz</p>
+          )}
+        </div>
 
-        {/* Boshqa o'yinchilar */}
-        {otherPlayers.length > 0 && (
-          <>
-            <Separator />
-            <section className="space-y-3">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Boshqa o&apos;yinchilar ({otherPlayers.length})
-              </h2>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {otherPlayers.map((p) =>
-                  p.character ? (
-                    <div key={p.id} className={p.is_alive ? "" : "opacity-50"}>
-                      <CharacterCard
-                        character={p.character}
-                        revealedFields={p.revealed_fields ?? []}
-                        playerName={p.is_alive ? p.nickname : `${p.nickname} ✕`}
-                      />
-                    </div>
-                  ) : null
-                )}
-              </div>
-            </section>
-          </>
-        )}
-      </main>
-    </>
+        {/* Right: ability + chat toggles */}
+        <div className="flex items-center gap-1.5">
+          {me.is_alive && me.special_ability_id && (
+            <AbilityButton
+              abilityId={me.special_ability_id}
+              used={me.special_ability_used ?? false}
+              roomId={room.id}
+              alivePlayers={players.filter((p) => p.is_alive).map((p) => ({ id: p.id, nickname: p.nickname }))}
+              myPlayerId={me.id}
+              currentRound={currentRound}
+            />
+          )}
+          <button
+            onClick={() => setChatOpen((o) => !o)}
+            className={[
+              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              chatOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            ].join(" ")}
+          >
+            <MessageSquare className="h-4 w-4" />
+            Chat
+          </button>
+        </div>
+      </div>
+
+      {/* Floating panels */}
+      <NotesPanel open={notesOpen} onClose={() => setNotesOpen(false)} roomCode={code} />
+      <ChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        roomId={room.id}
+        myPlayerId={me.id}
+        isAlive={me.is_alive}
+        currentUserId={currentUserId ?? ""}
+      />
+    </div>
   );
 }

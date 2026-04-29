@@ -1,4 +1,4 @@
-import type { Character, CharacterAttribute, Scenario } from "@/lib/game/types";
+import type { Character, CharacterAttribute, BiologyAttribute, Scenario } from "@/lib/game/types";
 import professionsData from "@/data/professions.json";
 import healthData from "@/data/health.json";
 import hobbiesData from "@/data/hobbies.json";
@@ -12,11 +12,21 @@ function pickRandom<T>(arr: T[]): T {
   return item;
 }
 
+function generateBiology(): BiologyAttribute {
+  const age = Math.floor(Math.random() * 53) + 18; // 18–70
+  const gender: "erkak" | "ayol" = Math.random() < 0.5 ? "erkak" : "ayol";
+  const genderLabel = gender === "erkak" ? "Erkak" : "Ayol";
+  return {
+    age,
+    gender,
+    description: `${genderLabel}, ${age} yoshda`,
+  };
+}
+
 export function generateCharacter(): Character {
   return {
     profession: pickRandom(professionsData) as CharacterAttribute,
-    age: Math.floor(Math.random() * 53) + 18, // 18–70
-    gender: Math.random() < 0.5 ? "erkak" : "ayol",
+    biology: generateBiology(),
     health: pickRandom(healthData) as CharacterAttribute,
     hobby: pickRandom(hobbiesData) as CharacterAttribute,
     trait: pickRandom(traitsData) as CharacterAttribute,

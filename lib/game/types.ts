@@ -3,8 +3,7 @@ export type GamePhase = "reveal" | "discussion" | "voting";
 
 export type CharacterField =
   | "profession"
-  | "age"
-  | "gender"
+  | "biology"
   | "health"
   | "hobby"
   | "trait"
@@ -15,10 +14,15 @@ export interface CharacterAttribute {
   description: string;
 }
 
-export interface Character {
-  profession: CharacterAttribute;
+export interface BiologyAttribute {
   age: number;
   gender: "erkak" | "ayol";
+  description: string;
+}
+
+export interface Character {
+  profession: CharacterAttribute;
+  biology: BiologyAttribute;
   health: CharacterAttribute;
   hobby: CharacterAttribute;
   trait: CharacterAttribute;
@@ -34,6 +38,10 @@ export interface Room {
   bunkerCapacity: number;
   currentRound: number;
   currentPhase: GamePhase | null;
+  currentTurnIndex: number;
+  turnStartedAt: string | null;
+  turnWarningAt: string | null;
+  turnGraceAt: string | null;
   scenarioId: string | null;
   settings: Record<string, unknown>;
   createdAt: string;
@@ -48,6 +56,8 @@ export interface Player {
   sessionId: string;
   isHost: boolean;
   isAlive: boolean;
+  isBot: boolean;
+  revealOrder: number | null;
   joinedAt: string;
   character: Character | null;
   revealedFields: CharacterField[];

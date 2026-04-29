@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { generateCharacters, pickScenario } from "@/lib/game/characterGenerator";
+import { randomAbilityId } from "@/lib/game/abilities";
+import { applyAbilities } from "@/lib/game/applyAbilities";
 import type { CharacterField } from "@/lib/game/types";
 
 function generateRoomCode(): string {
@@ -98,6 +100,98 @@ export async function joinRoom(nickname: string, roomCode: string): Promise<{ co
   return { code };
 }
 
+// ── Turn helpers ─────────────────────────────────────────────────────────────
+
+export async function startTurn(roomId: string): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({
+      turn_started_at: new Date().toISOString(),
+      turn_warning_at: null,
+      turn_grace_at: null,
+    })
+    .eq("id", roomId);
+
+  if (error) return { error: "Navbatni boshlashda xatolik" };
+  return {};
+}
+
+export async function confirmStillHere(roomId: string): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({ turn_grace_at: new Date().toISOString() })
+    .eq("id", roomId);
+
+  if (error) return { error: "Javob yuborishda xatolik" };
+  return {};
+}
+
+export async function triggerAfkAdvance(
+  roomId: string,
+  playerId: string
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  // Mark as bot and auto-reveal a random hidden card
+  const { data: player } = await supabase
+    .from("players")
+    .select("revealed_fields")
+    .eq("id", playerId)
+    .single();
+
+  if (!player) return { error: "O'yinchi topilmadi" };
+
+  const ALL_FIELDS: CharacterField[] = ["biology", "profession", "health", "hobby", "trait", "extra"];
+  const hidden = ALL_FIELDS.filter((f) => !(player.revealed_fields as CharacterField[]).includes(f));
+  const toReveal = hidden[Math.floor(Math.random() * hidden.length)];
+
+  if (toReveal) {
+    await supabase
+      .from("players")
+      .update({
+        is_bot: true,
+        revealed_fields: [...(player.revealed_fields as CharacterField[]), toReveal],
+      })
+      .eq("id", playerId);
+  }
+
+  // Advance turn index
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("current_turn_index")
+    .eq("id", roomId)
+    .single();
+
+  if (room) {
+    await supabase
+      .from("rooms")
+      .update({
+        current_turn_index: (room.current_turn_index ?? 0) + 1,
+        turn_started_at: new Date().toISOString(),
+        turn_warning_at: null,
+        turn_grace_at: null,
+      })
+      .eq("id", roomId);
+  }
+
+  return {};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function startGame(roomId: string): Promise<{ error?: string }> {
   const supabase = createClient();
 
@@ -115,10 +209,20 @@ export async function startGame(roomId: string): Promise<{ error?: string }> {
   const characters = generateCharacters(players.length);
   const scenario = pickScenario();
 
+  // Shuffle reveal order
+  const shuffledIndices = players.map((_, i) => i).sort(() => Math.random() - 0.5);
+
   const updates = players.map((p, i) =>
     supabase
       .from("players")
-      .update({ character: characters[i], revealed_fields: [] })
+      .update({
+        character: characters[i],
+        revealed_fields: [],
+        reveal_order: shuffledIndices[i],
+        is_bot: false,
+        special_ability_id: randomAbilityId(),
+        special_ability_used: false,
+      })
       .eq("id", p.id)
   );
   const results = await Promise.all(updates);
@@ -137,6 +241,10 @@ export async function startGame(roomId: string): Promise<{ error?: string }> {
       started_at: new Date().toISOString(),
       current_round: 1,
       bunker_capacity: bunkerCapacity,
+      current_turn_index: 0,
+      turn_started_at: new Date().toISOString(),
+      turn_warning_at: null,
+      turn_grace_at: null,
     })
     .eq("id", roomId);
 
@@ -303,19 +411,28 @@ export async function resetRoom(roomId: string): Promise<{ error?: string }> {
   if (room.host_id !== user.id) return { error: "Faqat host qayta boshlashi mumkin" };
   if (room.status !== "finished") return { error: "O'yin hali tugamagan" };
 
-  // Wipe per-game state on players: re-alive everyone, drop characters and reveals.
+  // Wipe per-game state on players
   const { error: playersErr } = await supabase
     .from("players")
-    .update({ is_alive: true, character: null, revealed_fields: [] })
+    .update({
+      is_alive: true,
+      character: null,
+      revealed_fields: [],
+      reveal_order: null,
+      is_bot: false,
+      special_ability_id: null,
+      special_ability_used: false,
+    })
     .eq("room_id", roomId);
   if (playersErr) return { error: "O'yinchilarni yangilashda xatolik" };
 
-  // Drop votes from previous game so round-1 unique constraint is clean.
-  const { error: votesErr } = await supabase
-    .from("votes")
-    .delete()
-    .eq("room_id", roomId);
-  if (votesErr) return { error: "Ovozlarni tozalashda xatolik" };
+  // Drop votes and ability uses from previous game
+  const [votesResult, abilitiesResult] = await Promise.all([
+    supabase.from("votes").delete().eq("room_id", roomId),
+    supabase.from("ability_uses").delete().eq("room_id", roomId),
+  ]);
+  if (votesResult.error) return { error: "Ovozlarni tozalashda xatolik" };
+  if (abilitiesResult.error) return { error: "Imkoniyatlarni tozalashda xatolik" };
 
   const { error: roomErr } = await supabase
     .from("rooms")
@@ -326,10 +443,89 @@ export async function resetRoom(roomId: string): Promise<{ error?: string }> {
       scenario_id: null,
       started_at: null,
       finished_at: null,
+      current_turn_index: 0,
+      turn_started_at: null,
+      turn_warning_at: null,
+      turn_grace_at: null,
     })
     .eq("id", roomId);
 
   if (roomErr) return { error: "Xonani qayta tiklashda xatolik" };
+  return {};
+}
+
+export async function sendMessage(
+  roomId: string,
+  playerId: string,
+  content: string,
+  type: "chat" | "ghost" | "system" | "event" = "chat"
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  const text = content.trim().slice(0, 280);
+  if (!text) return { error: "Xabar bo'sh bo'lmasin" };
+
+  const { error } = await supabase.from("messages").insert({
+    room_id: roomId,
+    player_id: playerId,
+    content: text,
+    type,
+  });
+
+  if (error) return { error: "Xabar yuborishda xatolik" };
+  return {};
+}
+
+export async function activateAbility(
+  roomId: string,
+  abilityId: string,
+  targetId: string | null,
+  payload: Record<string, unknown> = {}
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  const { data: me } = await supabase
+    .from("players")
+    .select("id, is_alive, special_ability_id, special_ability_used, room_id")
+    .eq("room_id", roomId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!me) return { error: "O'yinchi topilmadi" };
+  if (!me.is_alive) return { error: "Faqat tirik o'yinchilar foydalana oladi" };
+  if (me.special_ability_used) return { error: "Imkoniyatingizni allaqachon ishlatdingiz" };
+  if (me.special_ability_id !== abilityId) return { error: "Bu sizning imkoniyatingiz emas" };
+
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("current_round")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Xona topilmadi" };
+
+  const { error: insertErr } = await supabase.from("ability_uses").insert({
+    room_id: roomId,
+    player_id: me.id,
+    ability_id: abilityId,
+    round: room.current_round,
+    target_id: targetId,
+    payload,
+  });
+
+  if (insertErr) return { error: "Imkoniyatni qo'llashda xatolik: " + insertErr.message };
+
+  await supabase
+    .from("players")
+    .update({ special_ability_used: true })
+    .eq("id", me.id);
+
   return {};
 }
 
@@ -355,20 +551,46 @@ export async function tallyVotes(
   // Fetch votes for this round
   const { data: votes } = await supabase
     .from("votes")
-    .select("target_id")
+    .select("voter_id, target_id")
     .eq("room_id", roomId)
     .eq("round", round);
 
   if (!votes?.length) return { error: "Hech kim ovoz bermagan" };
 
-  // Count votes per target
-  const tally: Record<string, number> = {};
-  for (const v of votes) {
-    tally[v.target_id] = (tally[v.target_id] ?? 0) + 1;
+  // Fetch ability uses for this round
+  const { data: abilityUses } = await supabase
+    .from("ability_uses")
+    .select("player_id, ability_id, target_id, payload")
+    .eq("room_id", roomId)
+    .eq("round", round);
+
+  // Fetch alive players for disperse/alliance resolution
+  const { data: alivePlayers } = await supabase
+    .from("players")
+    .select("id, is_alive")
+    .eq("room_id", roomId)
+    .eq("is_alive", true);
+
+  const result = applyAbilities(
+    votes.map((v) => ({ voter_id: v.voter_id, target_id: v.target_id })),
+    (abilityUses ?? []).map((u) => ({
+      player_id: u.player_id,
+      ability_id: u.ability_id,
+      target_id: u.target_id,
+      payload: (u.payload as Record<string, unknown>) ?? {},
+    })),
+    (alivePlayers ?? []).map((p) => ({ id: p.id, is_alive: p.is_alive }))
+  );
+
+  if (result.noElimination) {
+    await supabase
+      .from("rooms")
+      .update({ current_round: round + 1, current_phase: null })
+      .eq("id", roomId);
+    return { eliminatedName: undefined, gameOver: false };
   }
 
-  // Find target with max votes (tie → first in iteration order)
-  const eliminatedId = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const eliminatedId = result.eliminatedId;
   if (!eliminatedId) return { error: "Ovozlarni hisoblashda xatolik" };
 
   // Eliminate the player
