@@ -20,15 +20,14 @@ export default function RoundTable({
 }: RoundTableProps) {
   const [selectedPlayer, setSelectedPlayer] = useState<SeatPlayer | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tableRadius, setTableRadius] = useState(160);
+  const [tableRadius, setTableRadius] = useState(200);
 
   useEffect(() => {
     const update = () => {
       if (!containerRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
       const shorter = Math.min(width, height);
-      // Seats sit at 40% of the container's shorter edge radius
-      setTableRadius(Math.max(100, Math.min(200, shorter * 0.38)));
+      setTableRadius(Math.max(140, Math.min(320, shorter * 0.42)));
     };
     update();
     const ro = new ResizeObserver(update);
@@ -42,11 +41,10 @@ export default function RoundTable({
     : null;
 
   return (
-    <>
+    <div className="relative w-full h-full">
       <div
         ref={containerRef}
-        className="relative flex items-center justify-center"
-        style={{ height: `${tableRadius * 2 + 120}px` }}
+        className="absolute inset-0 flex items-center justify-center"
       >
         {/* Table surface */}
         <div
@@ -99,6 +97,6 @@ export default function RoundTable({
         isMe={selectedPlayerLive?.user_id === currentUserId}
         onClose={() => setSelectedPlayer(null)}
       />
-    </>
+    </div>
   );
 }

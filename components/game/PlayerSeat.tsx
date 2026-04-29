@@ -66,7 +66,7 @@ export default function PlayerSeat({
         {/* Active turn ring */}
         {isActiveTurn && player.is_alive && (
           <motion.div
-            className="absolute inset-[-6px] rounded-full glow-amber"
+            className="absolute inset-[-8px] rounded-full glow-amber"
             animate={{ opacity: [0.6, 1, 0.6] }}
             transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
           />
@@ -75,7 +75,7 @@ export default function PlayerSeat({
         {/* Avatar circle */}
         <motion.div
           className={[
-            "relative flex h-12 w-12 items-center justify-center rounded-full border-2 text-lg font-bold select-none",
+            "relative flex h-16 w-16 items-center justify-center rounded-full border-2 text-xl font-bold select-none",
             isActiveTurn && player.is_alive
               ? "border-[var(--bunker-amber)] bg-[oklch(0.22_0.04_60)]"
               : isMe
@@ -89,19 +89,19 @@ export default function PlayerSeat({
 
           {/* Host crown */}
           {player.is_host && (
-            <Crown className="absolute -top-3 left-1/2 -translate-x-1/2 h-3.5 w-3.5 text-[var(--bunker-amber)]" />
+            <Crown className="absolute -top-3.5 left-1/2 -translate-x-1/2 h-4 w-4 text-[var(--bunker-amber)]" />
           )}
 
           {/* Bot indicator */}
           {player.is_bot && (
-            <Bot className="absolute -bottom-1 -right-1 h-3.5 w-3.5 text-muted-foreground bg-card rounded-full p-0.5" />
+            <Bot className="absolute -bottom-1 -right-1 h-4 w-4 text-muted-foreground bg-card rounded-full p-0.5" />
           )}
         </motion.div>
 
         {/* Nickname */}
         <span
           className={[
-            "max-w-[72px] truncate text-center text-[11px] font-semibold leading-tight",
+            "max-w-[88px] truncate text-center text-xs font-semibold leading-tight",
             isMe ? "text-[var(--bunker-amber)]" : "text-foreground",
             !player.is_alive && "text-muted-foreground line-through",
           ].join(" ")}
@@ -112,7 +112,7 @@ export default function PlayerSeat({
 
         {/* Revealed cards count */}
         {player.is_alive && (
-          <span className="text-[9px] text-muted-foreground tabular-nums">
+          <span className="text-[10px] text-muted-foreground tabular-nums">
             {revealedCount}/5
           </span>
         )}
@@ -120,7 +120,7 @@ export default function PlayerSeat({
         {/* Active turn label */}
         {isActiveTurn && player.is_alive && (
           <motion.span
-            className="absolute -bottom-6 whitespace-nowrap rounded bg-[var(--bunker-amber)] px-1.5 py-0.5 text-[9px] font-bold text-black"
+            className="absolute -bottom-7 whitespace-nowrap rounded bg-[var(--bunker-amber)] px-2 py-0.5 text-[10px] font-bold text-black"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
           >

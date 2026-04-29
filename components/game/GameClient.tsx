@@ -13,7 +13,14 @@ import AbilityButton from "@/components/game/AbilityButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, StickyNote, ChevronRight, SkipForward } from "lucide-react";
-import { revealField, advanceRound, setPhase, confirmStillHere, triggerAfkAdvance } from "@/app/actions";
+import {
+  revealField,
+  setRoundField,
+  advanceRound,
+  setPhase,
+  confirmStillHere,
+  triggerAfkAdvance,
+} from "@/app/actions";
 import TurnTimer from "@/components/game/TurnTimer";
 import AfkWarningDialog from "@/components/game/AfkWarningDialog";
 import type { Character, CharacterField } from "@/lib/game/types";
@@ -21,6 +28,15 @@ import type { SeatPlayer } from "@/components/game/PlayerSeat";
 import scenariosData from "@/data/scenarios.json";
 
 const ALL_FIELDS: CharacterField[] = ["biology", "profession", "health", "hobby", "trait", "extra"];
+
+const FIELD_LABELS: Record<CharacterField, string> = {
+  biology: "Biologiya",
+  profession: "Kasb",
+  health: "Salomatlik",
+  hobby: "Hobbi",
+  trait: "Xarakter",
+  extra: "Qo'shimcha",
+};
 
 interface ScenarioData {
   id: string;
@@ -52,6 +68,8 @@ interface RoomRow {
   current_round: number;
   current_phase: "reveal" | "discussion" | "voting" | null;
   current_turn_index: number;
+  current_round_field: CharacterField | null;
+  turn_duration: number;
   turn_started_at: string | null;
   turn_warning_at: string | null;
   turn_grace_at: string | null;
@@ -91,7 +109,7 @@ export default function GameClient({ code }: Props) {
 
       const { data: roomData, error: roomErr } = await supabase
         .from("rooms")
-        .select("id, code, host_id, scenario_id, bunker_capacity, current_round, current_phase, current_turn_index, turn_started_at, turn_warning_at, turn_grace_at, status")
+        .select("id, code, host_id, scenario_id, bunker_capacity, current_round, current_phase, current_turn_index, current_round_field, turn_duration, turn_started_at, turn_warning_at, turn_grace_at, status")
         .eq("code", code)
         .maybeSingle();
 
@@ -134,7 +152,6 @@ export default function GameClient({ code }: Props) {
           const updated = payload.new as PlayerRow;
           setPlayers((prev) => prev.map((p) => p.id === updated.id ? updated : p));
 
-          // Show eliminated name briefly
           const prev = players.find((p) => p.id === updated.id);
           if (prev?.is_alive && !updated.is_alive) {
             setRecentlyEliminatedName(updated.nickname);
@@ -169,7 +186,15 @@ export default function GameClient({ code }: Props) {
   const isVoting = room?.current_phase === "voting";
   const hasRevealedThisRound = (me?.revealed_fields.length ?? 0) >= currentRound;
   const hiddenFields = ALL_FIELDS.filter((f) => !(me?.revealed_fields ?? []).includes(f));
-  const canReveal = me?.is_alive && !hasRevealedThisRound && hiddenFields.length > 0 && !isVoting;
+  const roundField = room?.current_round_field ?? null;
+  const turnDuration = room?.turn_duration ?? 25;
+
+  // canReveal: if round field is forced, check it's still hidden; else check any hidden field exists
+  const canReveal = me?.is_alive &&
+    !hasRevealedThisRound &&
+    !isVoting &&
+    (roundField ? !me?.revealed_fields.includes(roundField) : hiddenFields.length > 0);
+
   const aliveCount = players.filter((p) => p.is_alive).length;
 
   // Turn-order derived state
@@ -195,41 +220,43 @@ export default function GameClient({ code }: Props) {
     return () => clearTimeout(t);
   }, [isMyTurn, room?.turn_grace_at, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // AFK: 25s expire — set warning on server (host does this, or anyone whose timer expired)
+  // AFK: turn expires → set warning on server
   useEffect(() => {
     if (!isMyTurn || isVoting || !room?.turn_started_at || room?.turn_warning_at) return;
-    const expiry = new Date(room.turn_started_at).getTime() + 25_000;
-    const now = Date.now();
-    const delay = Math.max(0, expiry - now);
+    const expiry = new Date(room.turn_started_at).getTime() + turnDuration * 1000;
+    const delay = Math.max(0, expiry - Date.now());
     const t = setTimeout(async () => {
-      // Mark warning time on room
       const supabase = (await import("@/lib/supabase/client")).createClient();
       await supabase.from("rooms").update({ turn_warning_at: new Date().toISOString() }).eq("id", room.id);
     }, delay);
     return () => clearTimeout(t);
-  }, [isMyTurn, isVoting, room?.turn_started_at, room?.turn_warning_at]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isMyTurn, isVoting, room?.turn_started_at, room?.turn_warning_at, turnDuration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleReveal = useCallback(async (field: CharacterField) => {
-    if (!me) return;
+    if (!me || !room) return;
     setRevealing(true);
     setRevealOpen(false);
+
+    // If this is the first player of the round (no field set yet), lock in the field for everyone
+    if (!room.current_round_field) {
+      const { error: rfError } = await setRoundField(room.id, field);
+      if (rfError) { toast.error(rfError); setRevealing(false); return; }
+    }
+
     const { error } = await revealField(me.id, field);
     if (error) toast.error(error);
     else {
-      // After reveal, advance turn index
-      if (room) {
-        const supabase = (await import("@/lib/supabase/client")).createClient();
-        await supabase
-          .from("rooms")
-          .update({
-            current_turn_index: (room.current_turn_index ?? 0) + 1,
-            turn_started_at: new Date().toISOString(),
-            turn_warning_at: null,
-            turn_grace_at: null,
-          })
-          .eq("id", room.id);
-      }
+      const supabase = (await import("@/lib/supabase/client")).createClient();
+      await supabase
+        .from("rooms")
+        .update({
+          current_turn_index: (room.current_turn_index ?? 0) + 1,
+          turn_started_at: new Date().toISOString(),
+          turn_warning_at: null,
+          turn_grace_at: null,
+        })
+        .eq("id", room.id);
     }
     setRevealing(false);
     afkTriggeredRef.current = false;
@@ -297,12 +324,14 @@ export default function GameClient({ code }: Props) {
 
   return (
     <div className="game-root flex flex-1 flex-col min-h-0">
+      {/* Field picker dialog — only shown to first player of the round */}
       <RevealDialog
         open={revealOpen}
         onOpenChange={setRevealOpen}
         hiddenFields={hiddenFields}
         onReveal={handleReveal}
         loading={revealing}
+        isFirstPlayer
       />
 
       <AfkWarningDialog
@@ -313,7 +342,7 @@ export default function GameClient({ code }: Props) {
 
       {/* Top scenario banner */}
       {scenario && (
-        <div className="flex items-center justify-between border-b border-border/40 bg-card/60 px-4 py-2 backdrop-blur-sm">
+        <div className="flex items-center justify-between border-b border-border/40 bg-card/60 px-4 py-2 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-3">
             <Badge variant="destructive" className="text-[10px] shrink-0">Favqulodda</Badge>
             <span className="text-xs font-semibold truncate">{scenario.name}</span>
@@ -322,6 +351,12 @@ export default function GameClient({ code }: Props) {
             </span>
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            {roundField && (
+              <span className="text-[var(--bunker-amber)] font-semibold">
+                {FIELD_LABELS[roundField]}
+              </span>
+            )}
+            <span className="text-border">·</span>
             <span>{aliveCount} tirik</span>
             <span className="text-border">·</span>
             <span className="font-semibold text-foreground">Bosqich {currentRound}</span>
@@ -329,30 +364,33 @@ export default function GameClient({ code }: Props) {
         </div>
       )}
 
-      {/* Main area: table */}
-      <div className="flex flex-1 flex-col items-center justify-start overflow-y-auto px-4 pt-6 pb-28">
-        <RoundTable
-          players={seatPlayers}
-          currentUserId={currentUserId ?? ""}
-          activeTurnPlayerId={activeTurnPlayer?.id ?? null}
-          recentlyEliminatedName={recentlyEliminatedName}
-        />
+      {/* Main table area — fills all available space */}
+      <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+        {/* Table fills the bulk of the space */}
+        <div className="relative flex-1 min-h-0">
+          <RoundTable
+            players={seatPlayers}
+            currentUserId={currentUserId ?? ""}
+            activeTurnPlayerId={activeTurnPlayer?.id ?? null}
+            recentlyEliminatedName={recentlyEliminatedName}
+          />
+        </div>
 
-        {/* Turn timer — show when it's my turn and not in voting */}
+        {/* Timer strip — only when it's my turn */}
         {isMyTurn && !isVoting && room?.turn_started_at && (
-          <div className="mt-4 flex flex-col items-center gap-1">
+          <div className="shrink-0 flex justify-center py-3">
             <TurnTimer
               turnStartedAt={room.turn_started_at}
-              totalSeconds={25}
-              onExpire={() => {/* warning dialog handled via useEffect */}}
+              totalSeconds={turnDuration}
+              onExpire={() => {/* AFK handled via effect */}}
               label="kartangizni oching"
             />
           </div>
         )}
 
-        {/* Voting panel — shown below table when voting */}
+        {/* Voting panel — scrollable section below table */}
         {isVoting && (
-          <div className="mt-6 w-full max-w-md space-y-2">
+          <div className="shrink-0 max-h-64 overflow-y-auto px-4 pb-20 space-y-2">
             <VotingPanel
               roomId={room.id}
               round={currentRound}
@@ -387,10 +425,19 @@ export default function GameClient({ code }: Props) {
         {/* Center: action buttons */}
         <div className="flex items-center gap-2">
           {!isVoting && canReveal && isMyTurn && (
-            <Button size="sm" onClick={() => setRevealOpen(true)} disabled={revealing} className="gap-1.5 text-xs">
-              <ChevronRight className="h-3.5 w-3.5" />
-              {revealing ? "Ochilmoqda..." : "Kartani och"}
-            </Button>
+            roundField ? (
+              // Not first player — reveal the forced field directly
+              <Button size="sm" onClick={() => handleReveal(roundField)} disabled={revealing} className="gap-1.5 text-xs">
+                <ChevronRight className="h-3.5 w-3.5" />
+                {revealing ? "Ochilmoqda..." : `${FIELD_LABELS[roundField]} kartasini och`}
+              </Button>
+            ) : (
+              // First player — open field picker dialog
+              <Button size="sm" onClick={() => setRevealOpen(true)} disabled={revealing} className="gap-1.5 text-xs">
+                <ChevronRight className="h-3.5 w-3.5" />
+                {revealing ? "Ochilmoqda..." : "Karta turini tanlang"}
+              </Button>
+            )
           )}
           {!isVoting && isHost && (
             <>
@@ -403,9 +450,15 @@ export default function GameClient({ code }: Props) {
               </Button>
             </>
           )}
-          {!isVoting && me.is_alive && !isMyTurn && !isVoting && hiddenFields.length > 0 && (
+          {!isVoting && me.is_alive && !isMyTurn && (
             <p className="text-[11px] text-muted-foreground">
-              {activeTurnPlayer ? `${activeTurnPlayer.nickname} so'zlaydi...` : "Navbatingizni kuting..."}
+              {roundField
+                ? activeTurnPlayer
+                  ? `${activeTurnPlayer.nickname} — ${FIELD_LABELS[roundField]}`
+                  : `Navbat: ${FIELD_LABELS[roundField]}`
+                : activeTurnPlayer
+                  ? `${activeTurnPlayer.nickname} karta turini tanlaydi...`
+                  : "Navbatingizni kuting..."}
             </p>
           )}
           {!me.is_alive && (

@@ -26,6 +26,7 @@ interface RevealDialogProps {
   hiddenFields: CharacterField[];
   onReveal: (field: CharacterField) => void;
   loading?: boolean;
+  isFirstPlayer?: boolean;
 }
 
 export default function RevealDialog({
@@ -34,15 +35,19 @@ export default function RevealDialog({
   hiddenFields,
   onReveal,
   loading = false,
+  isFirstPlayer = false,
 }: RevealDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Qaysi kartani ochmoqchisiz?</DialogTitle>
+          <DialogTitle>
+            {isFirstPlayer ? "Bu bosqich uchun karta turini tanlang" : "Qaysi kartani ochmoqchisiz?"}
+          </DialogTitle>
           <DialogDescription>
-            Bu bosqichda faqat bitta kartani ochishingiz mumkin. Boshqalar siz tanlagan
-            ma&apos;lumotni ko&apos;radi.
+            {isFirstPlayer
+              ? "Siz tanlagan karta turi bu bosqichda barcha o'yinchilar ochadigan tur bo'ladi."
+              : "Bu bosqichda faqat bitta kartani ochishingiz mumkin."}
           </DialogDescription>
         </DialogHeader>
 

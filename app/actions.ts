@@ -145,18 +145,25 @@ export async function triggerAfkAdvance(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Autentifikatsiya xatosi" };
 
-  // Mark as bot and auto-reveal a random hidden card
-  const { data: player } = await supabase
-    .from("players")
-    .select("revealed_fields")
-    .eq("id", playerId)
-    .single();
+  // Mark as bot and auto-reveal the round's forced field (or random if not set)
+  const [{ data: player }, { data: roomData }] = await Promise.all([
+    supabase.from("players").select("revealed_fields").eq("id", playerId).single(),
+    supabase.from("rooms").select("current_turn_index, current_round_field").eq("id", roomId).single(),
+  ]);
 
   if (!player) return { error: "O'yinchi topilmadi" };
 
   const ALL_FIELDS: CharacterField[] = ["biology", "profession", "health", "hobby", "trait", "extra"];
   const hidden = ALL_FIELDS.filter((f) => !(player.revealed_fields as CharacterField[]).includes(f));
-  const toReveal = hidden[Math.floor(Math.random() * hidden.length)];
+
+  let toReveal: CharacterField | undefined;
+  if (roomData?.current_round_field && hidden.includes(roomData.current_round_field as CharacterField)) {
+    toReveal = roomData.current_round_field as CharacterField;
+  } else if (hidden.length > 0) {
+    // First player AFK — pick a random field and set it as the round field
+    toReveal = hidden[Math.floor(Math.random() * hidden.length)];
+    await supabase.from("rooms").update({ current_round_field: toReveal }).eq("id", roomId);
+  }
 
   if (toReveal) {
     await supabase
@@ -229,9 +236,18 @@ export async function startGame(roomId: string): Promise<{ error?: string }> {
   const failed = results.find((r) => r.error);
   if (failed?.error) return { error: "Karakterlarni saqlashda xatolik" };
 
-  // Bunker capacity: floor(N/2). Always leaves room for at least one elimination
-  // round and prevents the "game ends immediately" bug when capacity ≥ players.
-  const bunkerCapacity = Math.max(1, Math.floor(players.length / 2));
+  // Use host-configured bunker_capacity if valid, else auto-calculate floor(N/2)
+  const { data: roomSettings } = await supabase
+    .from("rooms")
+    .select("bunker_capacity")
+    .eq("id", roomId)
+    .single();
+
+  const rawCapacity = roomSettings?.bunker_capacity ?? 0;
+  const bunkerCapacity =
+    rawCapacity >= 1 && rawCapacity < players.length
+      ? rawCapacity
+      : Math.max(1, Math.floor(players.length / 2));
 
   const { error: roomErr } = await supabase
     .from("rooms")
@@ -241,6 +257,7 @@ export async function startGame(roomId: string): Promise<{ error?: string }> {
       started_at: new Date().toISOString(),
       current_round: 1,
       bunker_capacity: bunkerCapacity,
+      current_round_field: null,
       current_turn_index: 0,
       turn_started_at: new Date().toISOString(),
       turn_warning_at: null,
@@ -319,6 +336,56 @@ export async function revealField(
   return {};
 }
 
+export async function setRoundField(
+  roomId: string,
+  field: CharacterField
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({ current_round_field: field })
+    .eq("id", roomId);
+
+  if (error) return { error: "Karta turini belgilashda xatolik" };
+  return {};
+}
+
+export async function updateRoomSettings(
+  roomId: string,
+  settings: { turnDuration?: number; bunkerCapacity?: number }
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Autentifikatsiya xatosi" };
+
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("host_id, status")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Xona topilmadi" };
+  if (room.host_id !== user.id) return { error: "Faqat host o'zgartira oladi" };
+  if (room.status !== "lobby") return { error: "O'yin boshlangandan keyin o'zgartirib bo'lmaydi" };
+
+  const updates: Record<string, unknown> = {};
+  if (settings.turnDuration !== undefined) {
+    updates.turn_duration = Math.max(10, Math.min(120, settings.turnDuration));
+  }
+  if (settings.bunkerCapacity !== undefined) {
+    updates.bunker_capacity = Math.max(1, settings.bunkerCapacity);
+  }
+
+  const { error } = await supabase.from("rooms").update(updates).eq("id", roomId);
+  if (error) return { error: "Sozlamalarni saqlashda xatolik" };
+  return {};
+}
+
 export async function advanceRound(roomId: string): Promise<{ error?: string }> {
   const supabase = createClient();
 
@@ -336,7 +403,15 @@ export async function advanceRound(roomId: string): Promise<{ error?: string }> 
 
   const { error } = await supabase
     .from("rooms")
-    .update({ current_round: (room.current_round ?? 1) + 1, current_phase: null })
+    .update({
+      current_round: (room.current_round ?? 1) + 1,
+      current_phase: null,
+      current_round_field: null,
+      current_turn_index: 0,
+      turn_started_at: new Date().toISOString(),
+      turn_warning_at: null,
+      turn_grace_at: null,
+    })
     .eq("id", roomId);
 
   if (error) return { error: "Bosqichni o'tkazishda xatolik" };
@@ -443,6 +518,7 @@ export async function resetRoom(roomId: string): Promise<{ error?: string }> {
       scenario_id: null,
       started_at: null,
       finished_at: null,
+      current_round_field: null,
       current_turn_index: 0,
       turn_started_at: null,
       turn_warning_at: null,

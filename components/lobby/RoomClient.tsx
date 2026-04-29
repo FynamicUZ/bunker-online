@@ -12,6 +12,7 @@ interface Room {
   status: string;
   max_players: number;
   bunker_capacity: number;
+  turn_duration: number;
 }
 
 interface Player {

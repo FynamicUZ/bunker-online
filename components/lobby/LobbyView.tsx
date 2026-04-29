@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { startGame, leaveRoom } from "@/app/actions";
+import { startGame, leaveRoom, updateRoomSettings } from "@/app/actions";
 
 const MIN_PLAYERS = 2;
 
@@ -18,6 +18,7 @@ interface Room {
   status: string;
   max_players: number;
   bunker_capacity: number;
+  turn_duration: number;
 }
 
 interface Player {
@@ -40,6 +41,9 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [starting, setStarting] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [turnDuration, setTurnDuration] = useState(room.turn_duration ?? 25);
+  const [bunkerCapacity, setBunkerCapacity] = useState(room.bunker_capacity ?? 5);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
 
   const currentPlayer = players.find((p) => p.user_id === currentUserId);
@@ -50,6 +54,29 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
     navigator.clipboard.writeText(room.code);
     toast.success("Kod nusxalandi!");
   }, [room.code]);
+
+  const saveSettings = useCallback((td: number, bc: number) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      const { error } = await updateRoomSettings(room.id, {
+        turnDuration: td,
+        bunkerCapacity: bc,
+      });
+      if (error) toast.error(error);
+    }, 600);
+  }, [room.id]);
+
+  const handleTurnDurationChange = (val: number) => {
+    const clamped = Math.max(10, Math.min(120, val));
+    setTurnDuration(clamped);
+    saveSettings(clamped, bunkerCapacity);
+  };
+
+  const handleBunkerCapacityChange = (val: number) => {
+    const clamped = Math.max(1, val);
+    setBunkerCapacity(clamped);
+    saveSettings(turnDuration, clamped);
+  };
 
   // Realtime: players jadvaliga obuna bo'lish
   useEffect(() => {
@@ -186,11 +213,60 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
         )}
       </div>
 
-      {/* Xona ma'lumotlari */}
-      <div className="text-muted-foreground flex gap-4 text-xs">
-        <span>Bunker: {room.bunker_capacity} joy</span>
-        <span>Max: {room.max_players} o&apos;yinchi</span>
-      </div>
+      {/* Host game settings */}
+      {isHost && (
+        <div className="w-full max-w-sm space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide">Sozlamalar</h2>
+
+          <div className="rounded-lg border border-border bg-card/60 px-4 py-3 space-y-4">
+            {/* Turn duration */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Vaqt limiti</p>
+                <p className="text-[11px] text-muted-foreground">Har o&apos;yinchiga berilgan vaqt (soniya)</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 transition-colors"
+                  onClick={() => handleTurnDurationChange(turnDuration - 5)}
+                >−</button>
+                <span className="w-10 text-center text-sm font-semibold tabular-nums">{turnDuration}s</span>
+                <button
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 transition-colors"
+                  onClick={() => handleTurnDurationChange(turnDuration + 5)}
+                >+</button>
+              </div>
+            </div>
+
+            {/* Bunker capacity */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Bunker sig&apos;imi</p>
+                <p className="text-[11px] text-muted-foreground">Bunkerdagi joylar soni</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 transition-colors"
+                  onClick={() => handleBunkerCapacityChange(bunkerCapacity - 1)}
+                >−</button>
+                <span className="w-10 text-center text-sm font-semibold tabular-nums">{bunkerCapacity} joy</span>
+                <button
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 transition-colors"
+                  onClick={() => handleBunkerCapacityChange(bunkerCapacity + 1)}
+                >+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Room info for non-hosts */}
+      {!isHost && (
+        <div className="text-muted-foreground flex gap-4 text-xs">
+          <span>Bunker: {room.bunker_capacity} joy</span>
+          <span>Vaqt: {room.turn_duration ?? 25}s</span>
+        </div>
+      )}
 
       {/* Boshlash tugmasi (faqat host) */}
       {isHost && (
