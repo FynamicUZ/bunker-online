@@ -323,7 +323,7 @@ export default function GameClient({ code }: Props) {
   }));
 
   return (
-    <div className="game-root flex flex-1 flex-col min-h-0">
+    <div className="game-root flex h-dvh flex-col overflow-hidden">
       {/* Field picker dialog — only shown to first player of the round */}
       <RevealDialog
         open={revealOpen}
