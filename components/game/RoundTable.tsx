@@ -20,14 +20,15 @@ export default function RoundTable({
 }: RoundTableProps) {
   const [selectedPlayer, setSelectedPlayer] = useState<SeatPlayer | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tableRadius, setTableRadius] = useState(200);
+  const [tableRadius, setTableRadius] = useState(140);
 
   useEffect(() => {
     const update = () => {
       if (!containerRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
-      const shorter = Math.min(width, height);
-      setTableRadius(Math.max(140, Math.min(320, shorter * 0.42)));
+      // Keep seats within bounds: seats extend ~110px below and ~50px to each side of the radius point
+      const maxR = Math.min(height / 2 - 110, width / 2 - 50, 260);
+      setTableRadius(Math.max(100, maxR));
     };
     update();
     const ro = new ResizeObserver(update);

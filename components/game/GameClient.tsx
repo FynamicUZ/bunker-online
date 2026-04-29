@@ -390,7 +390,7 @@ export default function GameClient({ code }: Props) {
 
         {/* Voting panel — scrollable section below table */}
         {isVoting && (
-          <div className="shrink-0 max-h-64 overflow-y-auto px-4 pb-20 space-y-2">
+          <div className="shrink-0 max-h-64 overflow-y-auto px-4 space-y-2">
             <VotingPanel
               roomId={room.id}
               round={currentRound}
@@ -406,6 +406,9 @@ export default function GameClient({ code }: Props) {
             )}
           </div>
         )}
+
+        {/* Reserves space for the fixed bottom HUD so player seats are not hidden behind it */}
+        <div className="shrink-0 h-16" />
       </div>
 
       {/* Bottom HUD */}
