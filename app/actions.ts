@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { generateCharacters, pickScenario } from "@/lib/game/characterGenerator";
-import { randomAbilityId } from "@/lib/game/abilities";
+import { randomAbilityId, getAbility } from "@/lib/game/abilities";
 import { applyAbilities } from "@/lib/game/applyAbilities";
 import type { CharacterField } from "@/lib/game/types";
 
@@ -160,9 +160,21 @@ export async function triggerAfkAdvance(
   if (roomData?.current_round_field && hidden.includes(roomData.current_round_field as CharacterField)) {
     toReveal = roomData.current_round_field as CharacterField;
   } else if (hidden.length > 0) {
-    // First player AFK — pick a random field and set it as the round field
-    toReveal = hidden[Math.floor(Math.random() * hidden.length)];
-    await supabase.from("rooms").update({ current_round_field: toReveal }).eq("id", roomId);
+    // First player AFK — pick a random field and conditionally lock it (only if still null)
+    const candidate = hidden[Math.floor(Math.random() * hidden.length)]!;
+    await supabase
+      .from("rooms")
+      .update({ current_round_field: candidate })
+      .eq("id", roomId)
+      .is("current_round_field", null);
+    // Re-read the locked field — another caller may have won the race
+    const { data: refreshed } = await supabase
+      .from("rooms")
+      .select("current_round_field")
+      .eq("id", roomId)
+      .single();
+    const locked = refreshed?.current_round_field as CharacterField | null;
+    toReveal = locked && hidden.includes(locked) ? locked : candidate;
   }
 
   if (toReveal) {
@@ -315,42 +327,76 @@ export async function revealField(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Autentifikatsiya xatosi" };
 
-  const { data, error: fetchErr } = await supabase
+  const { data: player, error: fetchErr } = await supabase
     .from("players")
-    .select("revealed_fields, user_id")
+    .select("id, room_id, user_id, is_alive, revealed_fields, reveal_order")
     .eq("id", playerId)
     .single();
 
-  if (fetchErr || !data) return { error: "O'yinchi topilmadi" };
-  if (data.user_id !== user.id) return { error: "Ruxsat yo'q" };
+  if (fetchErr || !player) return { error: "O'yinchi topilmadi" };
+  if (player.user_id !== user.id) return { error: "Ruxsat yo'q" };
+  if (!player.is_alive) return { error: "Faqat tirik o'yinchilar ocha oladi" };
 
-  const current: CharacterField[] = (data.revealed_fields as CharacterField[]) ?? [];
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("id, current_round, current_round_field, current_turn_index, current_phase")
+    .eq("id", player.room_id)
+    .single();
+
+  if (!room) return { error: "Xona topilmadi" };
+  if (room.current_phase === "voting") return { error: "Ovoz berish bosqichida ochib bo'lmaydi" };
+
+  if (room.current_round_field && room.current_round_field !== field) {
+    return { error: "Bu bosqichda boshqa karta turi tanlangan" };
+  }
+
+  const current: CharacterField[] = (player.revealed_fields as CharacterField[]) ?? [];
   if (current.includes(field)) return {};
+  if (current.length >= (room.current_round ?? 1)) {
+    return { error: "Bu bosqichda allaqachon kartangizni ochgansiz" };
+  }
 
-  const { error } = await supabase
+  const { data: aliveList } = await supabase
+    .from("players")
+    .select("id, reveal_order")
+    .eq("room_id", room.id)
+    .eq("is_alive", true);
+
+  const aliveCount = aliveList?.length ?? 0;
+  if (aliveCount === 0) return { error: "Tirik o'yinchilar yo'q" };
+
+  const expectedOrder = (room.current_turn_index ?? 0) % aliveCount;
+  if ((player.reveal_order ?? -1) !== expectedOrder) {
+    return { error: "Hozir sizning navbatingiz emas" };
+  }
+
+  // Atomically lock round_field if we're the first player and it's still null
+  if (!room.current_round_field) {
+    const { error: lockErr } = await supabase
+      .from("rooms")
+      .update({ current_round_field: field })
+      .eq("id", room.id)
+      .is("current_round_field", null);
+    if (lockErr) return { error: "Karta turini belgilashda xatolik" };
+  }
+
+  const { error: updateErr } = await supabase
     .from("players")
     .update({ revealed_fields: [...current, field] })
     .eq("id", playerId);
 
-  if (error) return { error: "Maydonni ochishda xatolik" };
-  return {};
-}
+  if (updateErr) return { error: "Maydonni ochishda xatolik" };
 
-export async function setRoundField(
-  roomId: string,
-  field: CharacterField
-): Promise<{ error?: string }> {
-  const supabase = createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Autentifikatsiya xatosi" };
-
-  const { error } = await supabase
+  await supabase
     .from("rooms")
-    .update({ current_round_field: field })
-    .eq("id", roomId);
+    .update({
+      current_turn_index: (room.current_turn_index ?? 0) + 1,
+      turn_started_at: new Date().toISOString(),
+      turn_warning_at: null,
+      turn_grace_at: null,
+    })
+    .eq("id", room.id);
 
-  if (error) return { error: "Karta turini belgilashda xatolik" };
   return {};
 }
 
@@ -456,6 +502,37 @@ export async function castVote(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Autentifikatsiya xatosi" };
 
+  if (voterId === targetId) return { error: "O'zingizga ovoz bera olmaysiz" };
+
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("current_phase, current_round")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Xona topilmadi" };
+  if (room.current_phase !== "voting") return { error: "Hozir ovoz berish bosqichi emas" };
+  if ((room.current_round ?? 0) !== round) return { error: "Bosqich raqami noto'g'ri" };
+
+  const { data: voter } = await supabase
+    .from("players")
+    .select("user_id, is_alive, room_id")
+    .eq("id", voterId)
+    .maybeSingle();
+
+  if (!voter || voter.room_id !== roomId) return { error: "O'yinchi topilmadi" };
+  if (voter.user_id !== user.id) return { error: "Ruxsat yo'q" };
+  if (!voter.is_alive) return { error: "Faqat tirik o'yinchilar ovoz bera oladi" };
+
+  const { data: target } = await supabase
+    .from("players")
+    .select("is_alive, room_id")
+    .eq("id", targetId)
+    .maybeSingle();
+
+  if (!target || target.room_id !== roomId) return { error: "Nishon topilmadi" };
+  if (!target.is_alive) return { error: "Chiqarilgan o'yinchiga ovoz bera olmaysiz" };
+
   const { error } = await supabase.from("votes").insert({
     room_id: roomId,
     voter_id: voterId,
@@ -544,11 +621,43 @@ export async function sendMessage(
   const text = content.trim().slice(0, 280);
   if (!text) return { error: "Xabar bo'sh bo'lmasin" };
 
+  if (type !== "chat" && type !== "ghost") {
+    return { error: "Faqat chat yoki ruh xabarini yuborishingiz mumkin" };
+  }
+
+  const { data: player } = await supabase
+    .from("players")
+    .select("id, user_id, is_alive, room_id")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  if (!player || player.room_id !== roomId) return { error: "O'yinchi topilmadi" };
+  if (player.user_id !== user.id) return { error: "Ruxsat yo'q" };
+
+  // Dead players cannot post into living chat
+  const finalType: "chat" | "ghost" = !player.is_alive ? "ghost" : type;
+  // Alive players cannot post into ghost chat
+  if (player.is_alive && type === "ghost") {
+    return { error: "Tirik o'yinchilar ruhlar gurungida yoza olmaydi" };
+  }
+
+  // Rate limit: max 3 messages per 3 seconds per player
+  const since = new Date(Date.now() - 3000).toISOString();
+  const { count: recentCount } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("player_id", playerId)
+    .gt("created_at", since);
+
+  if ((recentCount ?? 0) >= 3) {
+    return { error: "Juda tez yozyapsiz, biroz kuting" };
+  }
+
   const { error } = await supabase.from("messages").insert({
     room_id: roomId,
     player_id: playerId,
     content: text,
-    type,
+    type: finalType,
   });
 
   if (error) return { error: "Xabar yuborishda xatolik" };
@@ -578,13 +687,21 @@ export async function activateAbility(
   if (me.special_ability_used) return { error: "Imkoniyatingizni allaqachon ishlatdingiz" };
   if (me.special_ability_id !== abilityId) return { error: "Bu sizning imkoniyatingiz emas" };
 
+  const ability = getAbility(abilityId);
+  if (!ability) return { error: "Imkoniyat topilmadi" };
+
   const { data: room } = await supabase
     .from("rooms")
-    .select("current_round")
+    .select("current_round, current_phase")
     .eq("id", roomId)
     .single();
 
   if (!room) return { error: "Xona topilmadi" };
+
+  // Tally-applied abilities must be activated only during voting phase
+  if (ability.appliedAtTally && room.current_phase !== "voting") {
+    return { error: "Bu imkoniyatni faqat ovoz berish bosqichida ishlatish mumkin" };
+  }
 
   const { error: insertErr } = await supabase.from("ability_uses").insert({
     room_id: roomId,
@@ -661,7 +778,15 @@ export async function tallyVotes(
   if (result.noElimination) {
     await supabase
       .from("rooms")
-      .update({ current_round: round + 1, current_phase: null })
+      .update({
+        current_round: round + 1,
+        current_phase: null,
+        current_round_field: null,
+        current_turn_index: 0,
+        turn_started_at: new Date().toISOString(),
+        turn_warning_at: null,
+        turn_grace_at: null,
+      })
       .eq("id", roomId);
     return { eliminatedName: undefined, gameOver: false };
   }
@@ -701,7 +826,15 @@ export async function tallyVotes(
   } else {
     await supabase
       .from("rooms")
-      .update({ current_round: round + 1, current_phase: null })
+      .update({
+        current_round: round + 1,
+        current_phase: null,
+        current_round_field: null,
+        current_turn_index: 0,
+        turn_started_at: new Date().toISOString(),
+        turn_warning_at: null,
+        turn_grace_at: null,
+      })
       .eq("id", roomId);
   }
 

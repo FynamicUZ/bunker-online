@@ -36,38 +36,21 @@ export default function ChatPanel({
   const [sending, setSending] = useState(false);
   const [tab, setTab] = useState<"living" | "ghost">(() => isAlive ? "living" : "ghost");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevAliveRef = useRef(isAlive);
 
-  // Load initial messages
+  // Single effect: subscribe FIRST, then load initial messages, dedupe by id
   useEffect(() => {
     if (!open) return;
+    let isMounted = true;
     const supabase = createClient();
 
-    async function loadMessages() {
-      const { data } = await supabase
-        .from("messages")
-        .select("id, content, type, created_at, player_id, players(nickname, is_alive)")
-        .eq("room_id", roomId)
-        .order("created_at", { ascending: true })
-        .limit(200);
-      if (data) {
-        // Supabase returns joined rows as arrays; normalize to single object
-        const normalized = data.map((m) => ({
-          ...m,
-          players: Array.isArray(m.players) ? (m.players[0] ?? null) : m.players,
-        }));
-        setMessages(normalized as Message[]);
-      }
-    }
-
-    loadMessages();
-  }, [open, roomId]);
-
-  // Realtime subscription
-  useEffect(() => {
-    if (!open) return;
-    const supabase = createClient();
+    const appendDedup = (incoming: Message) => {
+      setMessages((prev) =>
+        prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming]
+      );
+    };
 
     const channel = supabase
       .channel(`chat:${roomId}`)
@@ -75,28 +58,62 @@ export default function ChatPanel({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
         async (payload) => {
+          if (!isMounted) return;
           const raw = payload.new as { id: string; content: string; type: string; created_at: string; player_id: string | null };
-          // Fetch player info
           if (raw.player_id) {
             const { data: player } = await supabase
               .from("players")
               .select("nickname, is_alive")
               .eq("id", raw.player_id)
               .maybeSingle();
-            setMessages((prev) => [...prev, { ...raw, players: player ?? null }]);
+            if (!isMounted) return;
+            appendDedup({ ...raw, players: player ?? null });
           } else {
-            setMessages((prev) => [...prev, { ...raw, players: null }]);
+            appendDedup({ ...raw, players: null });
           }
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    (async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("id, content, type, created_at, player_id, players(nickname, is_alive)")
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(200);
+      if (!isMounted) return;
+      if (data) {
+        const normalized = data.map((m) => ({
+          ...m,
+          players: Array.isArray(m.players) ? (m.players[0] ?? null) : m.players,
+        })) as Message[];
+        setMessages((prev) => {
+          // Merge: keep any realtime messages already received, then add initial ones not yet present
+          const seen = new Set(prev.map((m) => m.id));
+          const merged = [...prev];
+          for (const m of normalized) if (!seen.has(m.id)) merged.push(m);
+          merged.sort((a, b) => a.created_at.localeCompare(b.created_at));
+          return merged;
+        });
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
   }, [open, roomId]);
 
-  // Auto-scroll
+  // Auto-scroll only when user is already near the bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 80) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages, tab]);
 
   // Focus input when opened
@@ -186,7 +203,7 @@ export default function ChatPanel({
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
             {visibleMessages.length === 0 && (
               <p className="text-center text-[11px] text-muted-foreground/50 mt-8">
                 {tab === "ghost" ? "Ruhlar jim..." : "Hali xabar yo'q"}
@@ -228,8 +245,8 @@ export default function ChatPanel({
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
-          {(isAlive || tab === "ghost") && (
+          {/* Input — alive players write to living chat, dead players write to ghost chat */}
+          {((isAlive && tab === "living") || (!isAlive && tab === "ghost")) && (
             <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2">
               <input
                 ref={inputRef}

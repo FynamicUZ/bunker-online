@@ -15,13 +15,11 @@ import { Button } from "@/components/ui/button";
 import { MessageSquare, StickyNote, ChevronRight, SkipForward } from "lucide-react";
 import {
   revealField,
-  setRoundField,
   advanceRound,
   setPhase,
   confirmStillHere,
   triggerAfkAdvance,
 } from "@/app/actions";
-import TurnTimer from "@/components/game/TurnTimer";
 import AfkWarningDialog from "@/components/game/AfkWarningDialog";
 import type { Character, CharacterField } from "@/lib/game/types";
 import type { SeatPlayer } from "@/components/game/PlayerSeat";
@@ -238,26 +236,9 @@ export default function GameClient({ code }: Props) {
     setRevealing(true);
     setRevealOpen(false);
 
-    // If this is the first player of the round (no field set yet), lock in the field for everyone
-    if (!room.current_round_field) {
-      const { error: rfError } = await setRoundField(room.id, field);
-      if (rfError) { toast.error(rfError); setRevealing(false); return; }
-    }
-
+    // revealField now atomically locks the round field (if first) and bumps turn_index server-side
     const { error } = await revealField(me.id, field);
     if (error) toast.error(error);
-    else {
-      const supabase = (await import("@/lib/supabase/client")).createClient();
-      await supabase
-        .from("rooms")
-        .update({
-          current_turn_index: (room.current_turn_index ?? 0) + 1,
-          turn_started_at: new Date().toISOString(),
-          turn_warning_at: null,
-          turn_grace_at: null,
-        })
-        .eq("id", room.id);
-    }
     setRevealing(false);
     afkTriggeredRef.current = false;
   }, [me, room]);
@@ -342,15 +323,15 @@ export default function GameClient({ code }: Props) {
 
       {/* Top scenario banner */}
       {scenario && (
-        <div className="flex items-center justify-between border-b border-border/40 bg-card/60 px-4 py-2 backdrop-blur-sm shrink-0">
+        <div className="flex items-center justify-between border-b border-border/40 bg-card/60 px-5 py-3 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-3">
-            <Badge variant="destructive" className="text-[10px] shrink-0">Favqulodda</Badge>
-            <span className="text-xs font-semibold truncate">{scenario.name}</span>
-            <span className="text-[11px] text-muted-foreground hidden sm:block">
+            <Badge variant="destructive" className="text-xs shrink-0">Favqulodda</Badge>
+            <span className="text-sm font-semibold truncate">{scenario.name}</span>
+            <span className="text-xs text-muted-foreground hidden sm:block">
               {scenario.bunkerDuration} — {room.bunker_capacity} joy
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {roundField && (
               <span className="text-[var(--bunker-amber)] font-semibold">
                 {FIELD_LABELS[roundField]}
@@ -376,17 +357,6 @@ export default function GameClient({ code }: Props) {
           />
         </div>
 
-        {/* Timer strip — only when it's my turn */}
-        {isMyTurn && !isVoting && room?.turn_started_at && (
-          <div className="shrink-0 flex justify-center py-3">
-            <TurnTimer
-              turnStartedAt={room.turn_started_at}
-              totalSeconds={turnDuration}
-              onExpire={() => {/* AFK handled via effect */}}
-              label="kartangizni oching"
-            />
-          </div>
-        )}
 
         {/* Voting panel — scrollable section below table */}
         {isVoting && (
@@ -408,20 +378,20 @@ export default function GameClient({ code }: Props) {
         )}
 
         {/* Reserves space for the fixed bottom HUD so player seats are not hidden behind it */}
-        <div className="shrink-0 h-16" />
+        <div className="shrink-0 h-20" />
       </div>
 
       {/* Bottom HUD */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between border-t border-border/40 bg-[oklch(0.12_0.006_60/90%)] px-4 py-2 backdrop-blur-md">
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between border-t border-border/40 bg-[oklch(0.12_0.006_60/90%)] px-4 py-3 backdrop-blur-md">
         {/* Left: notes toggle */}
         <button
           onClick={() => setNotesOpen((o) => !o)}
           className={[
-            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            "flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors",
             notesOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
           ].join(" ")}
         >
-          <StickyNote className="h-4 w-4" />
+          <StickyNote className="h-5 w-5" />
           Yozuvlar
         </button>
 
@@ -430,31 +400,31 @@ export default function GameClient({ code }: Props) {
           {!isVoting && canReveal && isMyTurn && (
             roundField ? (
               // Not first player — reveal the forced field directly
-              <Button size="sm" onClick={() => handleReveal(roundField)} disabled={revealing} className="gap-1.5 text-xs">
-                <ChevronRight className="h-3.5 w-3.5" />
+              <Button size="default" onClick={() => handleReveal(roundField)} disabled={revealing} className="gap-1.5">
+                <ChevronRight className="h-4 w-4" />
                 {revealing ? "Ochilmoqda..." : `${FIELD_LABELS[roundField]} kartasini och`}
               </Button>
             ) : (
               // First player — open field picker dialog
-              <Button size="sm" onClick={() => setRevealOpen(true)} disabled={revealing} className="gap-1.5 text-xs">
-                <ChevronRight className="h-3.5 w-3.5" />
+              <Button size="default" onClick={() => setRevealOpen(true)} disabled={revealing} className="gap-1.5">
+                <ChevronRight className="h-4 w-4" />
                 {revealing ? "Ochilmoqda..." : "Karta turini tanlang"}
               </Button>
             )
           )}
           {!isVoting && isHost && (
             <>
-              <Button size="sm" variant="destructive" disabled={settingPhase} onClick={handleStartVoting} className="text-xs">
+              <Button size="default" variant="destructive" disabled={settingPhase} onClick={handleStartVoting}>
                 Ovozlash →
               </Button>
-              <Button size="sm" variant="outline" disabled={advancing} onClick={handleAdvanceRound} className="text-xs gap-1">
-                <SkipForward className="h-3.5 w-3.5" />
+              <Button size="default" variant="outline" disabled={advancing} onClick={handleAdvanceRound} className="gap-1">
+                <SkipForward className="h-4 w-4" />
                 Keyingi
               </Button>
             </>
           )}
           {!isVoting && me.is_alive && !isMyTurn && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {roundField
                 ? activeTurnPlayer
                   ? `${activeTurnPlayer.nickname} — ${FIELD_LABELS[roundField]}`
@@ -465,7 +435,7 @@ export default function GameClient({ code }: Props) {
             </p>
           )}
           {!me.is_alive && (
-            <p className="text-[11px] text-destructive font-medium">Siz bunkersiz qoldingiz</p>
+            <p className="text-xs text-destructive font-medium">Siz bunkersiz qoldingiz</p>
           )}
         </div>
 
@@ -484,11 +454,11 @@ export default function GameClient({ code }: Props) {
           <button
             onClick={() => setChatOpen((o) => !o)}
             className={[
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors",
               chatOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
             ].join(" ")}
           >
-            <MessageSquare className="h-4 w-4" />
+            <MessageSquare className="h-5 w-5" />
             Chat
           </button>
         </div>

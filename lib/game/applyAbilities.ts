@@ -77,9 +77,13 @@ export function applyAbilities(
     );
   }
 
-  // 5. reflect — votes against activator go to whoever voted them most
+  // 5. reflect — votes against activator go to whoever voted them most.
+  // System voters (e.g. from `slander`) are not real players and must be excluded
+  // from the candidate pool, otherwise the redirected target would be a non-player ID.
   for (const use of byAbility("reflect")) {
-    const incomingVoters = votes.filter((v) => v.target === use.player_id);
+    const incomingVoters = votes.filter(
+      (v) => v.target === use.player_id && aliveIds.has(v.voter)
+    );
     if (!incomingVoters.length) continue;
     const topVoter = incomingVoters.reduce((a, b) => (a.weight >= b.weight ? a : b)).voter;
     votes = votes.map((v) =>

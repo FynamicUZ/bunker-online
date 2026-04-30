@@ -11,12 +11,12 @@ export default function EliminationDoor({ eliminatedName }: EliminationDoorProps
     <div className="relative">
       {/* Bunker door SVG — right-back position */}
       <svg
-        width="56"
-        height="72"
+        width="72"
+        height="92"
         viewBox="0 0 56 72"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="opacity-70"
+        className="opacity-90"
       >
         {/* Door frame */}
         <rect x="2" y="2" width="52" height="68" rx="4" stroke="oklch(0.45 0.04 55)" strokeWidth="3" fill="oklch(0.14 0.006 55)" />
