@@ -18,7 +18,6 @@ interface Room {
   status: string;
   max_players: number;
   bunker_capacity: number;
-  turn_duration: number;
 }
 
 interface Player {
@@ -41,7 +40,6 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [starting, setStarting] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [turnDuration, setTurnDuration] = useState(room.turn_duration ?? 25);
   const [bunkerCapacity, setBunkerCapacity] = useState(room.bunker_capacity ?? 5);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
@@ -55,27 +53,18 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
     toast.success("Kod nusxalandi!");
   }, [room.code]);
 
-  const saveSettings = useCallback((td: number, bc: number) => {
+  const saveSettings = useCallback((bc: number) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
-      const { error } = await updateRoomSettings(room.id, {
-        turnDuration: td,
-        bunkerCapacity: bc,
-      });
+      const { error } = await updateRoomSettings(room.id, { bunkerCapacity: bc });
       if (error) toast.error(error);
     }, 600);
   }, [room.id]);
 
-  const handleTurnDurationChange = (val: number) => {
-    const clamped = Math.max(10, Math.min(120, val));
-    setTurnDuration(clamped);
-    saveSettings(clamped, bunkerCapacity);
-  };
-
   const handleBunkerCapacityChange = (val: number) => {
     const clamped = Math.max(1, val);
     setBunkerCapacity(clamped);
-    saveSettings(turnDuration, clamped);
+    saveSettings(clamped);
   };
 
   // Realtime: players jadvaliga obuna bo'lish
@@ -219,25 +208,6 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
           <h2 className="text-sm font-semibold uppercase tracking-wide">Sozlamalar</h2>
 
           <div className="rounded-lg border border-border bg-card/60 px-4 py-3 space-y-4">
-            {/* Turn duration */}
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium">Vaqt limiti</p>
-                <p className="text-[11px] text-muted-foreground">Har o&apos;yinchiga berilgan vaqt (soniya)</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 transition-colors"
-                  onClick={() => handleTurnDurationChange(turnDuration - 5)}
-                >−</button>
-                <span className="w-10 text-center text-sm font-semibold tabular-nums">{turnDuration}s</span>
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 transition-colors"
-                  onClick={() => handleTurnDurationChange(turnDuration + 5)}
-                >+</button>
-              </div>
-            </div>
-
             {/* Bunker capacity */}
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -264,7 +234,6 @@ export default function LobbyView({ room, initialPlayers, currentUserId }: Props
       {!isHost && (
         <div className="text-muted-foreground flex gap-4 text-xs">
           <span>Bunker: {room.bunker_capacity} joy</span>
-          <span>Vaqt: {room.turn_duration ?? 25}s</span>
         </div>
       )}
 

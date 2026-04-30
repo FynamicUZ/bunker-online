@@ -17,10 +17,7 @@ import {
   revealField,
   advanceRound,
   setPhase,
-  confirmStillHere,
-  triggerAfkAdvance,
 } from "@/app/actions";
-import AfkWarningDialog from "@/components/game/AfkWarningDialog";
 import type { Character, CharacterField } from "@/lib/game/types";
 import type { SeatPlayer } from "@/components/game/PlayerSeat";
 import scenariosData from "@/data/scenarios.json";
@@ -67,10 +64,6 @@ interface RoomRow {
   current_phase: "reveal" | "discussion" | "voting" | null;
   current_turn_index: number;
   current_round_field: CharacterField | null;
-  turn_duration: number;
-  turn_started_at: string | null;
-  turn_warning_at: string | null;
-  turn_grace_at: string | null;
   status: string;
 }
 
@@ -93,7 +86,6 @@ export default function GameClient({ code }: Props) {
   const [chatOpen, setChatOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [recentlyEliminatedName, setRecentlyEliminatedName] = useState<string | null>(null);
-  const afkTriggeredRef = useRef(false);
   const elimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load ──────────────────────────────────────────────────────────
@@ -107,7 +99,7 @@ export default function GameClient({ code }: Props) {
 
       const { data: roomData, error: roomErr } = await supabase
         .from("rooms")
-        .select("id, code, host_id, scenario_id, bunker_capacity, current_round, current_phase, current_turn_index, current_round_field, turn_duration, turn_started_at, turn_warning_at, turn_grace_at, status")
+        .select("id, code, host_id, scenario_id, bunker_capacity, current_round, current_phase, current_turn_index, current_round_field, status")
         .eq("code", code)
         .maybeSingle();
 
@@ -185,7 +177,6 @@ export default function GameClient({ code }: Props) {
   const hasRevealedThisRound = (me?.revealed_fields.length ?? 0) >= currentRound;
   const hiddenFields = ALL_FIELDS.filter((f) => !(me?.revealed_fields ?? []).includes(f));
   const roundField = room?.current_round_field ?? null;
-  const turnDuration = room?.turn_duration ?? 25;
 
   // canReveal: if round field is forced, check it's still hidden; else check any hidden field exists
   const canReveal = me?.is_alive &&
@@ -201,35 +192,6 @@ export default function GameClient({ code }: Props) {
   const activeTurnPlayer = alivePlayers.find((p) => (p.reveal_order ?? 0) === turnIndex % Math.max(alivePlayers.length, 1)) ?? null;
   const isMyTurn = activeTurnPlayer?.user_id === currentUserId && !isVoting;
 
-  // Derived: show AFK warning modal when server has set turn_warning_at for my turn
-  const showAfkWarning = Boolean(isMyTurn && room?.turn_warning_at && !room?.turn_grace_at);
-
-  // AFK: auto-trigger bot if grace period expired (20s after grace confirmed)
-  useEffect(() => {
-    if (!isMyTurn || !room?.turn_grace_at || !me) return;
-    const graceExpiry = new Date(room.turn_grace_at).getTime() + 20_000;
-    const delay = Math.max(0, graceExpiry - Date.now());
-    const t = setTimeout(() => {
-      if (!afkTriggeredRef.current) {
-        afkTriggeredRef.current = true;
-        triggerAfkAdvance(room.id, me.id);
-      }
-    }, delay);
-    return () => clearTimeout(t);
-  }, [isMyTurn, room?.turn_grace_at, me]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // AFK: turn expires → set warning on server
-  useEffect(() => {
-    if (!isMyTurn || isVoting || !room?.turn_started_at || room?.turn_warning_at) return;
-    const expiry = new Date(room.turn_started_at).getTime() + turnDuration * 1000;
-    const delay = Math.max(0, expiry - Date.now());
-    const t = setTimeout(async () => {
-      const supabase = (await import("@/lib/supabase/client")).createClient();
-      await supabase.from("rooms").update({ turn_warning_at: new Date().toISOString() }).eq("id", room.id);
-    }, delay);
-    return () => clearTimeout(t);
-  }, [isMyTurn, isVoting, room?.turn_started_at, room?.turn_warning_at, turnDuration]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleReveal = useCallback(async (field: CharacterField) => {
     if (!me || !room) return;
@@ -240,13 +202,7 @@ export default function GameClient({ code }: Props) {
     const { error } = await revealField(me.id, field);
     if (error) toast.error(error);
     setRevealing(false);
-    afkTriggeredRef.current = false;
   }, [me, room]);
-
-  const handleConfirmStillHere = useCallback(async () => {
-    if (!room) return;
-    await confirmStillHere(room.id);
-  }, [room]);
 
   const handleAdvanceRound = useCallback(async () => {
     if (!room) return;
@@ -313,12 +269,6 @@ export default function GameClient({ code }: Props) {
         onReveal={handleReveal}
         loading={revealing}
         isFirstPlayer
-      />
-
-      <AfkWarningDialog
-        open={showAfkWarning}
-        warningStartedAt={room?.turn_warning_at ?? null}
-        onConfirm={handleConfirmStillHere}
       />
 
       {/* Top scenario banner */}
